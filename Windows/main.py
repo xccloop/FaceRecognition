@@ -10,6 +10,7 @@ Windows 后台 — FastAPI 主入口
 """
 import sys
 import os
+import json
 import shutil
 import uuid
 import threading
@@ -17,7 +18,7 @@ from datetime import datetime
 from typing import List, Optional
 
 import webview
-from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
+from fastapi import Body, FastAPI, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,6 +37,39 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PHOTOS_DIR = os.path.join(BASE_DIR, "photos")
 FRONTEND_DIST = os.path.join(BASE_DIR, "frontend", "dist")
 os.makedirs(PHOTOS_DIR, exist_ok=True)
+
+# ── 运行时配置持久化 ──────────────────────────────────────────
+CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
+
+DEFAULT_CONFIG = {
+    "pi_host": "192.168.1.100",
+    "pi_stream_port": 8080,
+    "pi_ssh_port": 22,
+    "pi_user": "pi",
+    "pi_features_dir": "/home/pi/features/",
+    "server_port": SERVER_PORT,
+    "server_host": SERVER_HOST,
+    "heartbeat_timeout": 15,
+}
+
+
+def load_runtime_config() -> dict:
+    """加载运行时配置，优先读 config.json，回退到默认值"""
+    try:
+        if os.path.isfile(CONFIG_FILE):
+            with open(CONFIG_FILE, "r") as f:
+                saved = json.load(f)
+            return {**DEFAULT_CONFIG, **saved}
+    except Exception:
+        pass
+    return dict(DEFAULT_CONFIG)
+
+
+def save_runtime_config(data: dict) -> None:
+    """保存配置到 JSON 文件"""
+    with open(CONFIG_FILE, "w") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
 
 # ── FastAPI 应用 ──────────────────────────────────────────────
 app = FastAPI(
@@ -200,12 +234,52 @@ def api_delete_user(user_id: int, db: Session = Depends(get_db)):
     return {"success": True}
 
 
+# ═══════════════════════════════════════════════════════════════
+# 系统配置 API
+# ═══════════════════════════════════════════════════════════════
+
+@app.get("/api/config")
+def api_get_config():
+    """获取当前运行时配置"""
+    return load_runtime_config()
+
+
+@app.put("/api/config")
+def api_save_config(payload: dict = Body(...)):
+    """保存运行时配置（立即生效，服务器参数需重启）
+
+    使用 Body(...) 显式从请求体读取 JSON，避免 FastAPI 误判为查询参数。
+    """
+    cfg = load_runtime_config()
+    # 只允许更新已知字段
+    allowed = set(DEFAULT_CONFIG.keys())
+    updated_count = 0
+    for key in allowed:
+        if key in payload:
+            val = payload[key]
+            if isinstance(DEFAULT_CONFIG[key], int):
+                try:
+                    val = int(val)
+                except (TypeError, ValueError):
+                    continue
+            cfg[key] = val
+            updated_count += 1
+    try:
+        save_runtime_config(cfg)
+        print(f"[config] 已保存 {updated_count} 项配置到 {CONFIG_FILE}")
+    except Exception as e:
+        print(f"[config] 保存失败: {e}")
+        raise HTTPException(500, f"写入配置文件失败: {e}")
+    return {"success": True, "config": cfg}
+
+
 @app.get("/api/camera/status")
 def api_camera_status():
-    """摄像头状态（树莓派未上线时返回占位）"""
+    """摄像头状态（从运行时配置读取树莓派信息）"""
+    cfg = load_runtime_config()
     return {
         "pi_online": False,
-        "stream_url": "",
+        "stream_url": f"http://{cfg['pi_host']}:{cfg['pi_stream_port']}/stream",
         "camera_fps": 0,
         "pi_uptime": 0,
     }
