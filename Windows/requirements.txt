@@ -4,3 +4,5 @@ sqlalchemy>=2.0.0
 aiofiles>=23.0.0
 python-multipart>=0.0.6
 pywebview>=5.0
+pythonnet>=3.0
+proxy_tools>=0.1

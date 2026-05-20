@@ -176,6 +176,93 @@ server: {
 
 ---
 
+## 2026-05-20 — v1.1.0 搜索框暗色化 + 系统设置页
+
+### 新增功能
+
+| 功能 | 说明 |
+|------|------|
+| **系统设置页** | 新增 `/settings` 路由和 Settings.vue 组件，可视化配置树莓派 IP/端口/SSH 和服务器参数 |
+| **配置持久化** | 新增 `GET/PUT /api/config` API，配置保存到 `config.json`，重启后保留 |
+| **搜索框暗色化** | 人员管理页搜索框从 Element Plus 白色默认样式改为暗紫主题 |
+
+### 搜索框白色问题
+
+| 问题 | 人员管理页面的"搜索姓名..."输入框是 Element Plus 默认白色背景，与暗色主题不搭 |
+|------|---------------------------------------------------------------------------|
+| **原因** | `el-input` 组件未覆盖内部 `.el-input__wrapper` 样式 |
+| **解决** | 在 Users.vue scoped CSS 中用 `:deep()` 穿透覆盖：背景改为半透明紫色，边框/聚焦阴影均为紫色系 |
+
+### 配置页设计
+
+用户反馈：每次改树莓派 IP 需要去源码里找 `config.py` 改环境变量，非常不方便。
+
+解决：
+- 新建 `Settings.vue`：双卡片布局（树莓派连接 + 服务器参数），全部使用暗色表单控件
+- 后端新增 `CONFIG_FILE = config.json` + `load_runtime_config()` / `save_runtime_config()`
+- `GET /api/config` 返回当前配置，`PUT /api/config` 保存并立即生效
+- 页面底部实时推导视频流地址预览
+- 侧边栏新增"⚙ 系统设置"导航项
+
+### 文件变更
+
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `frontend/src/views/Settings.vue` | 新建 | 系统设置页，双卡片表单 |
+| `frontend/src/router/index.ts` | 修改 | 新增 `/settings` 懒加载路由 |
+| `frontend/src/api/index.ts` | 修改 | 新增 `getConfig()` / `saveConfig()` |
+| `frontend/src/components/AppSidebar.vue` | 修改 | 侧栏新增设置导航项 |
+| `frontend/src/views/Users.vue` | 修改 | 搜索框暗紫主题样式 |
+| `main.py` | 修改 | 新增 config.json 持久化 + GET/PUT /api/config + api_camera_status 读配置 |
+
+### 打包
+
+| 步骤 | 说明 |
+|------|------|
+| 前端构建 | `npm run build` 产出包含 Settings-*.js/css |
+| 打包 | `pyinstaller --onefile --windowed …` 产出 FaceRecognition.exe |
+| 版本 | v1.1.0 |
+
+---
+
+## 2026-05-20 — v1.1.1 Bug 修复：EXE 缺少 webview 模块
+
+### 问题
+
+| 问题 | 双击 `FaceRecognition.exe` 启动时报 `ModuleNotFoundError: No module named 'webview'` |
+|------|----------------------------------------------------------------------------------------|
+| **版本** | v1.1.0 EXE（8.9 MB） |
+| **现象** | `main.py` 第 20 行 `import webview` 失败，EXE 直接崩溃 |
+| **根因** | v1.1.0 打包所用终端会话中 conda `facerec` 环境未正确激活，`webview` 不在 PYTHONPATH 中。PyInstaller 对找不到的 `--hidden-import` 只发 WARNING 不中止构建，悄无声地产出残缺产物 |
+| **证据** | v1.0.0 EXE 24.7 MB（正常） vs v1.1.0 EXE 8.9 MB（异常，差距 16 MB） |
+
+### 解决
+
+1. 创建 `hook-webview.py`：PyInstaller hook 文件，强制收集 webview 所有子模块 (`collect_submodules`)、数据文件（js/css）和动态库
+2. 重写 `build_exe.bat`：不用 `conda activate`（在非交互式 cmd 中不可靠），改为自动扫描 facerec 环境 Python 路径（三套备选方案）
+3. 显式添加 `--hidden-import clr`（pythonnet，webview WinForms 后端依赖）
+4. 构建后增加大小校验：< 12 MB 告警，避免再次产出残缺 EXE
+5. `requirements.txt` 新增 `pythonnet>=3.0` 和 `proxy_tools>=0.1`（pywebview 的隐式依赖）
+
+### 文件变更
+
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| `hook-webview.py` | 新建 | PyInstaller hook，确保 webview 全部子模块/数据文件/DLL 被收集 |
+| `build_exe.bat` | 重写 | 自动查找 facerec Python 路径（绕过 conda activate 问题），新增依赖验证和大小校验 |
+| `requirements.txt` | 修改 | 显式列出 pythonnet、proxy_tools（pywebview 依赖） |
+| `doc/devlog.md` | 修改 | 追加本次 Bug 记录 |
+
+### 打包
+
+| 步骤 | 说明 |
+|------|------|
+| 直接 Python 调用 | `/d/ANACONDA/envs/facerec/python.exe -m PyInstaller ...` |
+| EXE 大小 | 25 MB（正常，v1.0.0 为 24.7 MB） |
+| 版本 | v1.1.1 |
+
+---
+
 ## 格式约定
 
 后续日志按日期分组，每条问题记录包含：**问题描述 → 原因分析 → 解决方案**。
