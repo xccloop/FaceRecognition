@@ -2,7 +2,7 @@
 Windows 后台 — FastAPI 主入口
 
 第一身份：手机小程序的后台服务器（接收注册）
-附加功能：管理面板（浏览器查看摄像头、管理人员）
+附加功能：管理面板（原生桌面窗口查看摄像头、管理人员）
 
 启动方式：
   开发：python main.py
@@ -12,10 +12,11 @@ import sys
 import os
 import shutil
 import uuid
-import webbrowser
+import threading
 from datetime import datetime
 from typing import List, Optional
 
+import webview
 from fastapi import FastAPI, Depends, HTTPException, UploadFile, File, Form
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
@@ -64,7 +65,6 @@ async def api_register(
     db: Session = Depends(get_db),
 ):
     """手机小程序注册接口：上传照片 + 姓名"""
-    # 校验
     if not name or not name.strip():
         raise HTTPException(400, "姓名不能为空")
 
@@ -75,7 +75,6 @@ async def api_register(
     if not photo.filename:
         raise HTTPException(400, "请上传照片")
 
-    # 读取并保存照片
     ext = os.path.splitext(photo.filename or "photo.jpg")[1].lower()
     if ext not in (".jpg", ".jpeg", ".png", ".bmp"):
         raise HTTPException(400, "仅支持 JPG/PNG/BMP 格式")
@@ -84,13 +83,12 @@ async def api_register(
     filepath = os.path.join(PHOTOS_DIR, filename)
 
     content = await photo.read()
-    if len(content) > 5 * 1024 * 1024:  # 5MB
+    if len(content) > 5 * 1024 * 1024:
         raise HTTPException(400, "照片过大（最大 5MB）")
 
     with open(filepath, "wb") as f:
         f.write(content)
 
-    # 写入数据库
     user = User(
         name=name,
         photo_url=f"/photos/{filename}",
@@ -189,7 +187,6 @@ def api_delete_user(user_id: int, db: Session = Depends(get_db)):
     if not user:
         raise HTTPException(404, "用户不存在")
 
-    # 删除照片文件
     if user.photo_url:
         filepath = os.path.join(BASE_DIR, user.photo_url.lstrip("/"))
         if os.path.isfile(filepath):
@@ -218,14 +215,12 @@ def api_camera_status():
 # 静态文件
 # ═══════════════════════════════════════════════════════════════
 
-# 照片目录
 app.mount("/photos", StaticFiles(directory=PHOTOS_DIR), name="photos")
 
 
 @app.get("/{full_path:path}")
 async def serve_frontend(full_path: str):
     """前端 SPA：非 API 路径返回 index.html"""
-    # API 路径不拦截
     if full_path.startswith("api/") or full_path.startswith("photos/"):
         raise HTTPException(status_code=404)
 
@@ -240,39 +235,59 @@ async def serve_frontend(full_path: str):
     return FileResponse(os.path.join(FRONTEND_DIST, "index.html"))
 
 
-# ── 主入口 ──────────────────────────────────────────────────
+# ── 原生桌面窗口 ────────────────────────────────────────────
 
-if __name__ == "__main__":
+def start_server():
+    """在后台线程启动 FastAPI 服务器"""
     import uvicorn
+    uvicorn.run(
+        app,
+        host=SERVER_HOST,
+        port=SERVER_PORT,
+        log_level="warning",
+    )
 
+
+def main():
+    """主入口：启动服务器 + 打开原生桌面窗口"""
     # 打包后 static 路径修正
     if getattr(sys, "frozen", False):
-        # PyInstaller --onefile 环境
-        # 重新赋值模块级别变量（PyInstaller 将资源放在 sys._MEIPASS）
         _meipass = sys._MEIPASS  # type: ignore[name-defined]
         new_photos = os.path.join(os.path.dirname(sys.executable), "photos")
         new_dist = os.path.join(_meipass, "frontend", "dist")
         os.makedirs(new_photos, exist_ok=True)
 
-        # 覆盖模块级路径常量
         import main as _main
         _main.PHOTOS_DIR = new_photos
         _main.FRONTEND_DIST = new_dist
 
-    # 自动打开浏览器
-    webbrowser.open(f"http://localhost:{SERVER_PORT}")
+    # 后台线程启动 FastAPI
+    server_thread = threading.Thread(target=start_server, daemon=True)
+    server_thread.start()
 
-    print(f"""
-╔══════════════════════════════════════════╗
-║   FaceRecognition 后台 v1.0             ║
-║   管理面板: http://localhost:{SERVER_PORT}    ║
-║   API 文档: http://localhost:{SERVER_PORT}/docs ║
-╚══════════════════════════════════════════╝
-    """)
+    # 等待服务器就绪
+    import time
+    import urllib.request
+    url = f"http://127.0.0.1:{SERVER_PORT}"
+    for _ in range(30):
+        try:
+            urllib.request.urlopen(url, timeout=1)
+            break
+        except Exception:
+            time.sleep(0.3)
 
-    uvicorn.run(
-        "main:app",
-        host=SERVER_HOST,
-        port=SERVER_PORT,
-        reload=not getattr(sys, "frozen", False),
+    # 打开原生桌面窗口
+    webview.create_window(
+        title="人脸识别门禁系统 - 管理面板",
+        url=url,
+        width=1200,
+        height=800,
+        min_size=(900, 600),
+        resizable=True,
+        fullscreen=False,
     )
+    webview.start()
+
+
+if __name__ == "__main__":
+    main()
