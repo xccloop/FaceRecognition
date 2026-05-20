@@ -301,6 +301,36 @@ FastAPI 无法确定 dict 参数应从请求体还是查询参数读取。对 PU
 
 v1.1.2
 
+
+## 2026-05-21 — v1.1.3：修复 PUT /api/config 返回 405 Method Not Allowed
+
+### 问题
+
+- **现象**：v1.1.2 保存配置时提示"保存失败：Method Not Allowed"
+- **根因**：dict = Body(...) 在部分 FastAPI 版本中路由注册失败，导致 PUT 端点不存在。当 PUT 请求到达路径 /api/config 时，GET-only 的 catch-all 路由 `{full_path:path}` 已占用该路径 → FastAPI 返回 405。
+
+### 解决
+
+放弃 Body() 注解，改用 Request 对象直接读取 JSON body：
+
+    # v1.1.3 正确写法
+    @app.put("/api/config")
+    async def api_save_config(request: Request):
+        payload = await request.json()
+
+- 直接从 request.json() 读取，绕开 Body() + dict 的兼容性问题
+- 恢复 async（request.json() 为异步操作）
+
+### 影响文件
+
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| main.py | 修改 | 第 247 行改用 Request 读 body |
+
+### 版本
+
+v1.1.3
+
 ## 格式约定
 
 后续日志按日期分组，每条问题记录包含：**问题描述 → 原因分析 → 解决方案**。

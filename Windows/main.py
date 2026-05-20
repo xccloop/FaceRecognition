@@ -18,7 +18,7 @@ from datetime import datetime
 from typing import List, Optional
 
 import webview
-from fastapi import Body, FastAPI, Depends, HTTPException, UploadFile, File, Form
+from fastapi import Body, FastAPI, Depends, HTTPException, Request, UploadFile, File, Form
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -245,11 +245,13 @@ def api_get_config():
 
 
 @app.put("/api/config")
-def api_save_config(payload: dict = Body(...)):
+async def api_save_config(request: Request):
     """保存运行时配置（立即生效，服务器参数需重启）
 
-    使用 Body(...) 显式从请求体读取 JSON，避免 FastAPI 误判为查询参数。
+    使用 request.json() 直接读取请求体，避免 Body() 注解与 dict 类型
+    在特定 FastAPI 版本中的兼容性问题（导致 405 Method Not Allowed）。
     """
+    payload = await request.json()
     cfg = load_runtime_config()
     # 只允许更新已知字段
     allowed = set(DEFAULT_CONFIG.keys())
