@@ -1,57 +1,32 @@
-# Compiled output
-build/
-Output/
+# === 本地文档（不上传） ===
+docs/Git与GitHub项目管理指南.md
+
+# === 编译产物 ===
 *.o
 *.obj
+*.elf
+*.bin
+*.hex
 *.exe
-*.out
-*.crf
-*.d
-*.o
-*.lst
-*.lnp
-*.sct
-*.dep
-*.map
+build/
+dist/
 
-# IDE
-.vs/
-.vscode/
-*.user
-*.suo
-*.uvguix.*
-*.uvoptx
-*.saved_uv4
-*.dbgconf
-*.scvd
-
-# Python
+# === Python ===
 __pycache__/
 *.pyc
-*.pyo
 .venv/
 venv/
 
-# OS files
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# === 敏感文件 ===
+.env
+*.local.json
+
+# === 系统文件 ===
 .DS_Store
 Thumbs.db
-desktop.ini
-
-# Build artifacts
-*.build_log.htm
-
-# Project specific
-Linux/Model/build/
-Stm32/Output/
-Stm32/DebugConfig/
-
-# ncnn prebuilt tools (large, download separately)
-ncnn-tools/
-
-# Extra ONNX models not needed (buffalo_s is 143MB, only buffalo_sc required)
-Linux/Model/models/onnx_models/buffalo_s/
-
-# Sensitive
-.env
-*.pem
-*.key
