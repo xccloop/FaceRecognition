@@ -333,4 +333,35 @@ v1.1.3
 
 ## 格式约定
 
+
+## 2026-05-21 — v1.1.4：修复 catch-all 路由导致 PUT /api/config 返回 405
+
+### 问题
+
+- **现象**：v1.1.3 保存配置仍提示"Method Not Allowed"
+- **根因**：catch-all 路由 `@app.get("/{full_path:path}")` 在 Starlette 路由编译器中与 `/api/config` 路径产生冲突。虽然 PUT 路由已正确注册，但 catch-all 的 `path` 转换器正则 `.*` 吞掉路径匹配，导致 PUT 请求被路由到 catch-all（仅 GET）→ 返回 405。v1.1.2/v1.1.3 的 Body()/request.json() 修复均未触及真正的路由冲突。
+
+### 解决
+
+删除 catch-all 路由，改用 FastAPI 官方 SPA 部署方式：
+
+    # v1.1.4 — 用 StaticFiles(html=True) 替代 catch-all
+    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
+
+- `html=True` 实现 SPA fallback：非文件路径返回 index.html
+- API 路由优先于 mount，不存在方法冲突
+- 额外添加：请求日志中间件（写入 request.log） + /api/debug/routes 诊断端点
+
+### 影响文件
+
+| 文件 | 操作 | 说明 |
+|------|------|------|
+| main.py | 修改 | 删除 catch-all 路由，改用 StaticFiles mount；加日志中间件和诊断端点 |
+
+### 版本
+
+v1.1.4
+
+## 格式约定
+
 后续日志按日期分组，每条问题记录包含：**问题描述 → 原因分析 → 解决方案**。
