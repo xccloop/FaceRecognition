@@ -1,5 +1,4 @@
-"""
-Windows 后台 — FastAPI 主入口
+"""Windows 后台 — FastAPI 主入口
 
 第一身份：手机小程序的后台服务器（接收注册）
 附加功能：管理面板（原生桌面窗口查看摄像头、管理人员）
@@ -52,10 +51,9 @@ CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
 DEFAULT_CONFIG = {
     "pi_host": "192.168.1.100",
     "pi_stream_port": 8080,
-    "pi_ssh_port": 22,
+    "pi_api_port": 5000,
     "pi_user": "pi",
     "pi_password": "",
-    "pi_features_dir": "/home/pi/features/",
     "server_port": SERVER_PORT,
     "server_host": SERVER_HOST,
     "heartbeat_timeout": 15,
@@ -90,7 +88,7 @@ try:
     _SYNC_AVAILABLE = True
 except ImportError:
     _SYNC_AVAILABLE = False
-    print("[main] sync.py 未找到或缺少依赖 (paramiko)，Pi 同步功能不可用")
+    print("[main] sync.py 未找到或缺少依赖 (requests)，Pi 同步功能不可用")
 
 
 # ── FastAPI 应用 ──────────────────────────────────────────────
@@ -354,7 +352,7 @@ def api_pi_status(db: Session = Depends(get_db)):
 def api_sync_user(user_id: int, db: Session = Depends(get_db)):
     """同步单个用户到树莓派"""
     if not _SYNC_AVAILABLE:
-        raise HTTPException(503, "Pi 同步模块未加载，请安装 paramiko 依赖")
+        raise HTTPException(503, "Pi 同步模块未加载，请安装 requests 依赖")
 
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
@@ -380,7 +378,7 @@ def api_sync_user(user_id: int, db: Session = Depends(get_db)):
 def api_sync_all(db: Session = Depends(get_db)):
     """批量同步所有未同步用户到树莓派"""
     if not _SYNC_AVAILABLE:
-        raise HTTPException(503, "Pi 同步模块未加载，请安装 paramiko 依赖")
+        raise HTTPException(503, "Pi 同步模块未加载，请安装 requests 依赖")
 
     result = _sync_all_unsynced(db)
     return result
