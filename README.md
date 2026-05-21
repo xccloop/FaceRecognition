@@ -1,213 +1,308 @@
-# 四端协同人脸识别系统
+# FaceRecognition — 人脸识别门禁系统
 
+> **作者**：向治昌  
+> **定位**：三端协同的人脸识别门禁系统 — 手机采集人脸 → Windows 后台管理 → STM32 控制继电器开门
 
-> 🔖 版本：v0.1.0-dev
+---
 
-基于树莓派 4B 的实时人脸识别系统，四端协同工作：手机采集人脸 → Windows 后台管理 → 树莓派实时推理 → STM32 执行动作。
-
-项目归属于向治昌
-
-## 系统架构
+## 一、系统架构
 
 ```
-手机(小程序) ──拍照上传──► Windows后台 ──特征下发──► 树莓派4B ──UART──► STM32
-                               ▲                        │                │
-                               │                        ▼                ▼
-                               └──────── 识别记录 ◄── 摄像头推理      LED/继电器/蜂鸣器
+┌─────────────────┐     HTTP/REST      ┌────────────────────┐     UART / 二进制帧      ┌──────────────┐
+│   手机端（微信小程序） │ ────────────────→ │   Windows 后台（桌面）  │ ──────────────────────→ │  STM32 固件    │
+│   人脸采集入口       │                  │   FastAPI + Vue 3    │                        │  继电器/门锁控制 │
+└─────────────────┘                     └──────────┬─────────┘                        └──────────────┘
+                                                   │
+                                                   │ TCP（可选）
+                                                   ▼
+                                          ┌────────────────┐
+                                          │  树莓派（Pi）    │
+                                          │  人脸识别推理    │
+                                          └────────────────┘
 ```
 
-## 各端职责
+- **手机端**：微信小程序，拍照 + 填姓名 → 上传到 Windows 后台
+- **Windows 后台**：FastAPI REST API + Vue 3 管理界面 + SQLite 数据库
+- **STM32**：FreeRTOS 固件，通过 UART 接收命令控制继电器/门锁
+- **树莓派**（可选）：运行人脸识别模型，通过 TCP 与 Windows 通信
 
-| 端 | 职责 | 技术栈 | 状态 |
-|----|------|--------|------|
-| **树莓派 4B** | 核心推理引擎：摄像头采集 → SCRFD人脸检测 → 对齐 → MobileFaceNet特征提取 → 特征库比对 → UART输出结果 | C++ / ncnn / OpenCV | 🟡 推理管线完成，实时流水线待组装 |
-| **STM32F103** | 接收识别结果，执行硬件动作（LED/继电器），心跳超时检测 | C / FreeRTOS / FWlib | 🟡 UART基础通信完成，协议待升级 |
-| **Windows 后台** | 接收手机注册请求，提取人脸特征，通过SSH下发到树莓派 | Python / FastAPI / SQLite | ⬜ 待开发 |
-| **手机小程序** | 拍照/选图，填写姓名，上传到Windows后台注册 | 微信小程序 | ⬜ 待开发 |
+---
 
-- 🟢 完成  &nbsp; 🟡 部分完成  &nbsp; ⬜ 待开发
+## 二、各模块完成情况
 
-## AI 模型管线
+### 2.1 手机端（Phone/）— 微信小程序
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 拍照采集 | ✅ 完成 | `wx.chooseMedia` 调用系统相机 |
+| 从相册选照片 | ✅ 完成 | 支持相册选取 |
+| 姓名输入 | ✅ 完成 | 表单输入 + 前端校验 |
+| 上传到后台 | ✅ 完成 | `wx.uploadFile` multipart/form-data → `POST /api/register` |
+| 服务器配置 | ✅ 完成 | 可配置 Windows 后台 IP + 端口，带连接测试 |
+| 隐私授权 | ✅ 完成 | `wx.requirePrivacyAuthorize` 合规处理 |
+| ES5 兼容 | ✅ 完成 | 全链路 ES5 语法，兼容低版本 iOS 微信 |
+| 上传进度显示 | ✅ 完成 | Loading + 成功/失败提示 |
+
+**进度**：功能完整，`register` 页面已可用。
+
+### 2.2 Windows 后台（Windows/）— Python + Vue 3
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| FastAPI REST API | ✅ 完成 | 用户 CRUD、日志、配置、注册、健康检查 |
+| SQLite 数据库 | ✅ 完成 | SQLAlchemy ORM，User / LogEntry / SyncState 三表 |
+| Vue 3 管理界面 | ✅ 完成 | Element Plus UI，4 个页面 |
+| Dashboard 仪表盘 | ✅ 完成 | 统计卡片（用户数/今日识别/在线状态），countup.js 动画 |
+| 人员管理 | ✅ 完成 | 搜索、列表、增删改、同步到 Pi |
+| 摄像头预览 | ⚠️ 基础 | MJPEG 流代理，在线/离线状态显示 |
+| 系统设置 | ✅ 完成 | 树莓派 IP/端口配置、服务器参数、运行时持久化 |
+| Pi 同步模块 | ✅ 完成 | TCP 二进制帧协议，心跳保活，照片同步调度 |
+| 登录认证 | ⚠️ 占位 | 前端登录页存在但后端无鉴权（内网使用） |
+| PyInstaller 打包 | ⚠️ 待测 | 有 hook-webview.py，未完整测试打包 |
+
+**进度**：核心功能完成约 85%，摄像头和登录模块待完善。
+
+### 2.3 STM32 固件（Stm32/）— C / FreeRTOS
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| FreeRTOS 多任务 | ✅ 完成 | 任务调度、软件定时器 |
+| UART 二进制帧协议 | ✅ 完成 | 0xAA/0x55 帧头尾，0xBB 字节填充，XOR 校验 |
+| LED 指示 | ✅ 完成 | 状态灯控制 |
+| LCD 显示 | ✅ 完成 | 状态信息显示 |
+| 继电器控制 | ✅ 完成 | GPIO 控制门锁 |
+| 独立看门狗 (IWDG) | ✅ 完成 | 防死机自动复位 |
+| 命令绑定 | ⚠️ 基础 | 协议解析完成，命令→动作映射待完善 |
+
+**进度**：底层通信和驱动完成约 80%，上层命令逻辑待完善。
+
+### 2.4 树莓派端（Linux/）— 人脸识别推理
+
+| 功能 | 状态 | 说明 |
+|------|------|------|
+| 人脸检测/识别 | ⚠️ 待开发 | 目录存在但代码不完整 |
+| 与 Windows TCP 通信 | ⚠️ 待开发 | sync.py 中 Windows 侧已就绪 |
+
+**进度**：约 10%，Windows 侧通信层已就绪，Pi 侧推理待开发。
+
+---
+
+## 三、技术栈
+
+### Windows 后台
+| 层级 | 技术 | 版本 |
+|------|------|------|
+| 语言 | Python | 3.x |
+| Web 框架 | FastAPI | — |
+| ASGI 服务器 | Uvicorn | — |
+| ORM | SQLAlchemy | — |
+| 数据库 | SQLite（可切换） | — |
+| 配置管理 | Pydantic Settings | — |
+| 桌面窗口 | pywebview + Edge WebView2 | — |
+| 前端框架 | Vue 3 + TypeScript | ^3.4 |
+| 构建工具 | Vite | ^5.1 |
+| UI 库 | Element Plus | ^2.5 |
+| HTTP 客户端 | Axios | ^1.6 |
+| 动画 | @vueuse/motion + countup.js | — |
+| 打包 | PyInstaller | — |
+
+### 手机端（微信小程序）
+| 层级 | 技术 | 说明 |
+|------|------|------|
+| 平台 | 微信小程序原生 | 无需 uni-app / Taro |
+| 语言 | JavaScript (ES5) | 兼容低版本 iOS |
+| UI | 原生组件 | 不引入第三方 UI 库 |
+| 网络 | `wx.uploadFile` | multipart/form-data |
+| 存储 | `wx.StorageSync` | 服务器配置持久化 |
+| 基础库 | ≥3.3.4 | — |
+
+### STM32 固件
+| 层级 | 技术 | 说明 |
+|------|------|------|
+| MCU | STM32（具体型号见工程配置） | — |
+| RTOS | FreeRTOS | 多任务 + 软件定时器 |
+| 开发环境 | Keil MDK (Project.uvprojx) | — |
+| 通信 | UART 自定义二进制帧协议 | 见下方协议说明 |
+| 外设 | GPIO（继电器/LED）、LCD | — |
+
+---
+
+## 四、核心通信协议
+
+### UART 二进制帧协议（Windows ↔ STM32）
 
 ```
-摄像头帧 ──► SCRFD (det_500m) ──► bbox + 5关键点 ──► 仿射变换 ──► 112×112 正脸
-                                                                          │
-                                                                          ▼
-                                                               MobileFaceNet (w600k_mbf)
-                                                                          │
-                                                                          ▼
-                                                                    512维特征向量
-                                                                          │
-                                                                          ▼
-                                                                  特征库余弦比对
-                                                                          │
-                                                          ┌───────┬───────┴───────┬───────┐
-                                                          │       │               │       │
-                                                       匹配成功  检测到未识别     无人脸   多人脸
-                                                       (0x10)    (0x11)         (0x12)   (0x13)
+帧格式: [0xAA] [CMD] [LEN] [PAYLOAD...] [XOR-CRC] [0x55]
+         ↑                                        ↑
+       帧头                                      帧尾
+
+转义规则: 数据中出现 0xAA / 0x55 / 0xBB 时
+         前插 0xBB 作为转义符
 ```
 
-| 步骤 | 模型 | 输入 | 输出 | 推理框架 |
-|------|------|------|------|----------|
-| 人脸检测 | SCRFD det_500m | 任意尺寸 BGR | bbox + 5关键点 | ncnn |
-| 人脸对齐 | OpenCV estimateAffinePartial2D | 5关键点 + 原图 | 112×112 正脸 | — |
-| 特征提取 | MobileFaceNet w600k_mbf | 112×112 BGR | 512维归一化向量 | ncnn |
+- **帧头**：`0xAA`（1 字节）
+- **帧尾**：`0x55`（1 字节）
+- **命令码**：1 字节（如继电器开/关、状态查询等）
+- **长度**：1 字节（负载长度）
+- **校验**：1 字节（帧头~负载的 XOR 和）
+- **字节填充**：负载中 `0xAA`/`0x55`/`0xBB` 前插 `0xBB`
 
-## 目录结构
+### HTTP API（手机 ↔ Windows）
+
+```
+POST /api/register    — 人脸注册（multipart: photo + name）
+GET  /api/users       — 人员列表
+POST /api/users       — 添加用户
+PUT  /api/users/{id}  — 更新用户
+DELETE /api/users/{id} — 删除用户
+GET  /api/dashboard/stats — 仪表盘统计
+POST /api/camera/start    — 启动摄像头流
+POST /api/camera/stop     — 停止摄像头流
+GET  /api/config          — 获取配置
+PUT  /api/config          — 更新配置
+POST /api/sync/start      — 启动 Pi 同步
+POST /api/sync/stop       — 停止 Pi 同步
+```
+
+---
+
+## 五、特殊适配说明
+
+### 5.1 手机端 ES5 兼容
+- **原因**：部分低版本 iOS 微信不支持 ES6 语法
+- **措施**：
+  - 全部使用 `function` 而非箭头函数
+  - 字符串拼接代替模板字符串
+  - `var` 代替 `let/const`
+  - `project.config.json` 设置 `"es6": false`、`"minified": false`、`"disableSWC": true`
+  - 移除 `lazyCodeLoading` 避免远程编译兼容问题
+
+### 5.2 隐私合规
+- 微信要求调用摄像头前获取用户隐私授权
+- 通过 `wx.requirePrivacyAuthorize` 实现
+- `app.json` 中 `"__usePrivacyCheck__": true`
+
+### 5.3 服务器配置灵活性
+- 小程序端可通过设置弹窗配置 Windows 后台 IP 和端口
+- 配置持久化到 `wx.StorageSync`
+- 默认回退地址：`http://192.168.1.5:8000`
+
+### 5.4 数据库可切换
+- 默认使用 SQLite（零配置，适合桌面应用）
+- 通过 SQLAlchemy 抽象，可切换至 MySQL / PostgreSQL
+- 配置通过 Pydantic Settings 从 `config.yaml` 或环境变量读取
+
+### 5.5 桌面窗口模式
+- 使用 `pywebview` + Edge WebView2 实现原生桌面窗口
+- 非浏览器模式，无地址栏和标签页
+- PyInstaller 提供 `hook-webview.py` 运行时钩子
+
+---
+
+## 六、快速开始
+
+### 6.1 启动 Windows 后台
+
+```bash
+cd Windows
+pip install -r requirements.txt
+python main.py
+```
+
+服务器启动后自动打开桌面窗口，访问 `http://127.0.0.1:8000`。
+
+### 6.2 前端开发模式
+
+```bash
+cd Windows/frontend
+npm install
+npm run dev          # Vite 开发服务器，自动代理 API 到 :8000
+```
+
+### 6.3 手机端使用
+
+1. 微信开发者工具打开 `Phone/` 目录
+2. 在设置中填入 Windows 后台的局域网 IP
+3. 扫码预览，拍照上传测试
+
+### 6.4 STM32 固件烧录
+
+Keil MDK 打开 `Stm32/Project.uvprojx`，编译后通过 ST-Link 烧录。
+
+---
+
+## 七、项目结构
 
 ```
 FaceRecognition/
-│
-├── Linux/                         # 树莓派端
-│   ├── Linux scheme.md            # 设计文档
-│   ├── doc/
-│   │   ├── tasks.md               # 待完成事项
-│   │   └── stduy/study.md         # 树莓派开发学习笔记
-│   └── Model/
-│       ├── CMakeLists.txt         # C++ 构建
-│       ├── verify.py              # Python 验证脚本（可用）
-│       ├── inc/                   # C++ 头文件
-│       │   ├── facedetector.h
-│       │   ├── facealigner.h
-│       │   ├── featureextractor.h
-│       │   └── custom_layers.h
-│       ├── src/                   # C++ 实现
-│       │   ├── main.cpp           # CLI 工具 (register/identify/compare)
-│       │   ├── facedetector.cpp   # SCRFD 检测 + NMS
-│       │   ├── facealigner.cpp    # 5点仿射变换
-│       │   ├── featureextractor.cpp # MobileFaceNet 提取
-│       │   └── custom_layers.cpp  # Shape/Gather 自定义层
-│       ├── models/                # 模型文件
-│       │   ├── det_500m_simp.onnx # SCRFD ONNX 模型（~2.5MB）
-│       │   └── ncnn_models/       # ncnn 转换模型
-│       ├── features/              # 注册的人脸特征 .bin
-│       └── doc/                   # 模型/推理/问题排查文档
-│
-├── Stm32/                         # STM32 端
-│   ├── Project.uvprojx            # Keil 工程
-│   ├── Transmit.txt               # 通信协议说明
-│   ├── User/
-│   │   ├── main.c                 # FreeRTOS + UART 接收任务
-│   │   ├── stm32f10x_it.c         # USART2 ISR
-│   │   └── stm32f10x_it.h
-│   ├── FreeRTOS/                  # FreeRTOS 源码
-│   ├── Fwlib/                     # STM32 标准外设库
+├── Windows/                    # Windows 后台（Python + Vue 3）
+│   ├── main.py                 # FastAPI 主入口 + webview
+│   ├── models.py               # SQLAlchemy 数据模型
+│   ├── config.py               # Pydantic 配置管理
+│   ├── sync.py                 # Pi 同步模块（TCP + 二进制帧）
+│   ├── database.py             # 数据库会话依赖
+│   ├── requirements.txt        # Python 依赖
+│   ├── hook-webview.py         # PyInstaller 钩子
+│   └── frontend/               # Vue 3 前端
+│       ├── package.json
+│       ├── vite.config.ts
+│       ├── tsconfig.json
+│       └── src/
+│           ├── App.vue         # 根布局
+│           ├── router/         # Vue Router
+│           ├── api/            # Axios API 封装
+│           ├── components/     # 公共组件（侧边栏）
+│           └── views/          # 4 个页面
+│               ├── Dashboard.vue   # 仪表盘
+│               ├── Users.vue       # 人员管理
+│               ├── Camera.vue      # 摄像头预览
+│               └── Settings.vue    # 系统设置
+├── Phone/                      # 手机端（微信小程序）
+│   ├── miniprogram/
+│   │   ├── app.js / app.json
+│   │   ├── pages/register/     # 注册页面（唯一页面）
+│   │   └── utils/api.js        # API 封装
+│   ├── project.config.json
 │   └── doc/
-│       └── tasks.md               # 待完成事项
-│
-├── Windows/                       # Windows 后台
-│   └── doc/
-│       └── tasks.md               # 待完成事项 + 技术方案
-│
-├── Phone/                         # 手机小程序
-│   └── doc/
-│       └── tasks.md               # 待完成事项 + 技术方案
-│
-├── 项目总体方案.md                  # 项目总方案文档
-├── FaceRecongnition_description.txt # 原始项目描述
-└── README.md
+│       ├── ARCHITECTURE.md     # 系统架构文档
+│       ├── tasks.md            # 任务分解与进度
+│       └── DEVELOPMENT_ISSUES.md # 开发问题记录
+├── Stm32/                      # STM32 固件
+│   ├── User/main.c             # 主程序（FreeRTOS + UART 协议）
+│   └── Project.uvprojx         # Keil 工程文件
+├── Linux/                      # 树莓派端（待开发）
+├── CLAUDE.md                   # Git 工作流规范
+└── README.md                   # 本文件
 ```
 
-## 当前进度
+---
 
-### 树莓派端
+## 八、Git 工作流
 
-**已完成：**
-- ncnn + OpenCV 环境搭建与 CMake 构建
-- SCRFD 人脸检测：anchor生成、多尺度解码、NMS 后处理
-- 5点仿射变换人脸对齐（ArcFace 112×112 标准模板）
-- MobileFaceNet 特征提取 + L2归一化 + 余弦相似度比对
-- CLI 工具：register（注册人脸）、identify（识别是谁）、compare（比对两张脸）
-- Python 版验证脚本（verify.py）：支持实时摄像头，已验证识别精度（同人 sim≈0.6，陌生人 sim≈0.15）
+本项目使用严格的分支开发策略（详见 `CLAUDE.md`）：
 
-**待完成：** 摄像头采集线程、特征库 FeatureDB、UART 协议编解码、串口收发线程、config.json、主程序线程调度、systemd 自启
+- **永远不在 main 上直接开发**，所有改动通过功能分支
+- **Commit Message** 遵循 Conventional Commits：
+  - `feat(windows):` / `fix(stm32):` / `docs(project):` / `refactor(pi):`
+- **分支命名**：`feat/<描述>` / `fix/<描述>` / `docs/<描述>` / `refactor/<描述>`
+- **合并方式**：Squash and Merge
 
-**已知问题：** C++ ncnn 版 SCRFD 自定义层（Shape/Gather）pass-through 实现不准确，导致推理结果为空。Python onnxruntime 版功能完整可用。
+---
 
-### STM32 端
+## 九、待完成
 
-**已完成：**
-- FreeRTOS 运行正常（静态内存分配）
-- USART2 初始化 + RXNE 中断接收
-- 字节接收队列 + 基础 8 字节帧解析状态机
-- PA0 LED 状态指示
+| 优先级 | 模块 | 任务 |
+|--------|------|------|
+| P0 | Windows | 完善摄像头预览功能 |
+| P0 | STM32 | 命令→继电器动作映射完善 |
+| P1 | Windows | 打包为独立 EXE（PyInstaller） |
+| P1 | 全系统 | 端到端集成测试（手机→Windows→STM32） |
+| P2 | Linux | 树莓派人脸识别推理模块 |
+| P2 | Windows | 登录认证（如需公网部署） |
+| P3 | Phone | 生产环境部署（HTTPS + 域名白名单） |
 
-**待完成：** 替换为完整变长帧协议（含转义）、命令分发 handler、心跳超时检测、UART 发送函数、看门狗
+---
 
-### Windows 后台 — 待开发
-### 手机小程序 — 待开发
+## 十、许可证
 
-## 快速开始
-
-### Python 验证（PC，推荐先跑）
-
-```bash
-pip install opencv-python onnxruntime numpy
-cd Linux\Model
-
-# 下载 ONNX 模型到 models/onnx_models/buffalo_sc/
-# (从 InsightFace 下载 buffalo_sc.zip 解压)
-
-# 注册人脸
-python verify.py register my_face.jpg 张三
-
-# 识别
-python verify.py identify test.jpg
-
-# 实时摄像头
-python verify.py live
-```
-
-### C++ 编译（树莓派 / 有 ncnn 环境的 PC）
-
-```bash
-# 安装依赖
-sudo apt install -y build-essential cmake libopencv-dev
-# 编译 ncnn（树莓派上）
-git clone https://github.com/Tencent/ncnn.git
-cd ncnn && mkdir build && cd build
-cmake -DCMAKE_BUILD_TYPE=Release -DNCNN_BUILD_EXAMPLES=OFF ..
-make -j2 && sudo make install
-
-# 编译本项目
-cd Linux/Model
-cmake -B build && cmake --build build -j4
-./build/facerec test my_face.jpg
-```
-
-### STM32 编译
-
-用 Keil MDK-ARM 打开 `Stm32/Project.uvprojx`，编译下载。
-
-## UART 帧协议
-
-```
-┌──────┬──────┬──────┬──────────┬──────┬──────┬──────┐
-│ 帧头  │ 命令  │ 方向  │ 数据长度  │ 数据  │ 校验  │ 帧尾  │
-│ 0xAA │ CMD  │ DIR  │ 2B(H-L)  │ 变长  │ XOR  │ 0x55 │
-└──────┴──────┴──────┴──────────┴──────┴──────┴──────┘
-
-方向: 0x01=Pi→STM32, 0x02=STM32→Pi
-校验: 字段逐字节异或
-转义: 0xAA/0x55/0xBB 特殊处理
-
-Pi→STM32:  0x10 识别成功  0x11 未识别  0x12 无人脸  0x1F 心跳
-STM32→Pi:  0x20 开门确认  0x21 注册    0x22 删除    0x23 查询
-```
-
-## 开发顺序
-
-| 阶段 | 内容 | 状态 |
-|------|------|------|
-| 第一阶段 | 树莓派推理管线 + STM32 UART 协议联调 | 🟡 进行中 |
-| 第二阶段 | Windows 后台 + 树莓派网络通信 | ⬜ |
-| 第三阶段 | 手机小程序 + 全系统联调 | ⬜ |
-
-## 硬件
-
-| 设备 | 规格 |
-|------|------|
-| 树莓派 | 4B, 2GB RAM, Raspberry Pi OS Lite 64-bit |
-| 摄像头 | USB 或 CSI, 建议 320×240 |
-| STM32 | STM32F103C8T6 (Cortex-M3) |
-| 连接 | 树莓派 GPIO14/15 ↔ STM32 PA3/PA2 (UART 115200) |
+MIT License — 作者：向治昌
