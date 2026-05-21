@@ -1,0 +1,168 @@
+<view class="container">
+  <!-- ═══════════════════════════════════════════════════════════
+       服务器状态栏
+       ═══════════════════════════════════════════════════════════ -->
+  <view class="server-bar" bindtap="showSettingsDialog">
+    <view class="server-dot {{serverConfigured ? 'dot-configured' : 'dot-default'}}"></view>
+    <text class="server-label">服务器</text>
+    <text class="server-addr">{{serverDisplay}}</text>
+    <text class="server-arrow">修改 ></text>
+  </view>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       页面头部
+       ═══════════════════════════════════════════════════════════ -->
+  <view class="header">
+    <text class="title">人脸信息采集</text>
+    <text class="subtitle">请拍摄清晰正面照</text>
+  </view>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       照片区域
+       ═══════════════════════════════════════════════════════════ -->
+  <view class="photo-area {{photoPath ? 'has-photo' : ''}}" bindtap="choosePhoto">
+    <image
+      wx:if="{{photoPath}}"
+      src="{{photoPath}}"
+      mode="aspectFit"
+      class="photo-image"
+    />
+    <view wx:else class="photo-placeholder">
+      <text class="camera-emoji">📷</text>
+      <text class="placeholder-text">点击拍照或选择照片</text>
+    </view>
+  </view>
+
+  <view class="btn-row">
+    <button class="btn-camera" bindtap="takePhoto" hover-class="btn-hover">
+      拍照
+    </button>
+    <button class="btn-album" bindtap="chooseFromAlbum" hover-class="btn-hover">
+      从相册选
+    </button>
+  </view>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       姓名输入
+       ═══════════════════════════════════════════════════════════ -->
+  <view class="input-section">
+    <view class="input-row">
+      <text class="input-label">姓名</text>
+      <input
+        class="name-input"
+        placeholder="请输入姓名（必填）"
+        placeholder-class="input-placeholder"
+        value="{{name}}"
+        bindinput="onNameInput"
+        maxlength="20"
+        confirm-type="done"
+      />
+    </view>
+    <text wx:if="{{name}}" class="char-count">{{name.length}}/20</text>
+  </view>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       提交按钮
+       ═══════════════════════════════════════════════════════════ -->
+  <button
+    class="submit-btn {{submitting ? 'btn-loading' : ''}}"
+    type="primary"
+    bindtap="submitRegister"
+    disabled="{{!photoPath || !nameValid || submitting}}"
+    loading="{{submitting}}"
+  >
+    {{submitting ? '上传中...' : '提交注册'}}
+  </button>
+
+  <view class="hint">
+    <text>请正面拍照，确保光线充足，人脸清晰可见</text>
+  </view>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       提交结果
+       ═══════════════════════════════════════════════════════════ -->
+  <view wx:if="{{result}}" class="result-banner {{result.success ? 'result-success' : 'result-error'}}">
+    <text class="result-icon">{{result.success ? 'OK' : 'NO'}}</text>
+    <text class="result-message">{{result.message}}</text>
+  </view>
+
+  <button
+    wx:if="{{result && result.success}}"
+    class="reset-btn"
+    type="default"
+    bindtap="reset"
+    hover-class="btn-hover"
+  >
+    继续注册
+  </button>
+
+  <!-- ═══════════════════════════════════════════════════════════
+       服务器设置弹窗
+       ═══════════════════════════════════════════════════════════ -->
+  <view wx:if="{{showSettings}}" class="settings-overlay" bindtap="hideSettingsDialog">
+    <view class="settings-card" catchtap="stopPropagation">
+      <view class="settings-header">
+        <text class="settings-title">服务器设置</text>
+        <view class="settings-close" bindtap="hideSettingsDialog">
+          <text>×</text>
+        </view>
+      </view>
+
+      <view class="settings-body">
+        <!-- IP 输入 -->
+        <view class="settings-field">
+          <text class="settings-label">服务器 IP 地址</text>
+          <input
+            class="settings-input"
+            placeholder="192.168.1.5"
+            placeholder-class="settings-input-placeholder"
+            value="{{serverIp}}"
+            bindinput="onIpInput"
+            type="text"
+            maxlength="15"
+          />
+          <text class="settings-hint">Windows 电脑的局域网 IP</text>
+        </view>
+
+        <!-- 端口输入 -->
+        <view class="settings-field">
+          <text class="settings-label">端口号</text>
+          <input
+            class="settings-input"
+            placeholder="8000"
+            placeholder-class="settings-input-placeholder"
+            value="{{serverPort}}"
+            bindinput="onPortInput"
+            type="number"
+            maxlength="5"
+          />
+          <text class="settings-hint">默认 8000，一般无需修改</text>
+        </view>
+
+        <!-- 连接测试结果 -->
+        <view wx:if="{{testResult}}" class="test-result {{testResult.success ? 'test-ok' : 'test-fail'}}">
+          <text class="test-icon">{{testResult.success ? '✓' : '✗'}}</text>
+          <text class="test-message">{{testResult.message}}</text>
+        </view>
+
+        <!-- 操作按钮 -->
+        <view class="settings-actions">
+          <button
+            class="settings-btn test-btn"
+            bindtap="testConnection"
+            loading="{{testing}}"
+            disabled="{{testing}}"
+          >
+            {{testing ? '测试中...' : '测试连接'}}
+          </button>
+          <button
+            class="settings-btn save-btn"
+            bindtap="saveServerConfig"
+          >
+            保存
+          </button>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>
