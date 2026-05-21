@@ -12,8 +12,29 @@
           clearable
           @input="onSearch"
         />
+        <el-button
+          type="primary"
+          :icon="Upload"
+          :loading="syncingAll"
+          @click="syncAll"
+          :disabled="unsyncedCount === 0"
+        >
+          同步全部到 Pi ({{ unsyncedCount }})
+        </el-button>
       </div>
     </div>
+
+    <!-- Pi 状态提示 -->
+    <el-alert
+      v-if="!piOnline"
+      title="树莓派离线"
+      type="warning"
+      :closable="false"
+      show-icon
+      style="margin-bottom: 16px"
+    >
+      无法同步数据到树莓派，请检查 Pi 端网络连接。
+    </el-alert>
 
     <!-- 卡片网格 -->
     <div class="user-grid" v-loading="loading">
@@ -37,6 +58,13 @@
                 </div>
               </template>
             </el-image>
+            <!-- 同步状态角标 -->
+            <div class="sync-badge" :class="{ synced: user.pi_synced }">
+              <el-icon :size="12">
+                <Check v-if="user.pi_synced" />
+                <Clock v-else />
+              </el-icon>
+            </div>
           </div>
           <div class="card-info">
             <span class="card-name">{{ user.name }}</span>
@@ -121,23 +149,39 @@
           </el-descriptions-item>
         </el-descriptions>
 
-        <el-button
-          type="danger"
-          style="margin-top: 20px; width: 100%"
-          @click="confirmDelete(drawerUser)"
-        >
-          删除此人
-        </el-button>
+        <!-- 操作按钮组 -->
+        <div class="drawer-actions">
+          <el-button
+            v-if="!drawerUser.pi_synced"
+            type="primary"
+            :loading="syncingId === drawerUser.id"
+            style="flex: 1"
+            @click="syncOne(drawerUser)"
+          >
+            同步到树莓派
+          </el-button>
+          <el-tag v-else type="success" style="flex: 1; text-align: center; padding: 8px 0">
+            <el-icon style="margin-right: 4px"><Check /></el-icon>
+            已同步到 Pi
+          </el-tag>
+          <el-button
+            type="danger"
+            style="flex: 1"
+            @click="confirmDelete(drawerUser)"
+          >
+            删除此人
+          </el-button>
+        </div>
       </div>
     </el-drawer>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from "vue";
-import { Delete, UserFilled } from "@element-plus/icons-vue";
+import { ref, computed, onMounted } from "vue";
+import { Delete, UserFilled, Upload, Check, Clock } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { getUsers, deleteUser } from "../api";
+import { getUsers, deleteUser, syncUser, syncAllUsers, getPiStatus } from "../api";
 
 interface UserItem {
   id: number;
@@ -155,6 +199,13 @@ const loading = ref(false);
 const search = ref("");
 const drawerVisible = ref(false);
 const drawerUser = ref<UserItem | null>(null);
+const syncingId = ref(0);
+const syncingAll = ref(false);
+const piOnline = ref(false);
+
+const unsyncedCount = computed(() =>
+  users.value.filter((u) => !u.pi_synced).length
+);
 
 let searchTimer: ReturnType<typeof setTimeout>;
 
@@ -169,6 +220,50 @@ async function loadUsers() {
     ElMessage.error("加载人员列表失败");
   } finally {
     loading.value = false;
+  }
+}
+
+async function checkPiStatus() {
+  try {
+    const res = await getPiStatus();
+    piOnline.value = res.data.pi_online === true;
+  } catch {
+    piOnline.value = false;
+  }
+}
+
+async function syncOne(user: UserItem) {
+  if (!piOnline.value) {
+    ElMessage.warning("树莓派不在线，无法同步");
+    return;
+  }
+  syncingId.value = user.id;
+  try {
+    await syncUser(user.id);
+    ElMessage.success(`已将 ${user.name} 同步到树莓派`);
+    await loadUsers();
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.error || "同步失败");
+  } finally {
+    syncingId.value = 0;
+  }
+}
+
+async function syncAll() {
+  if (!piOnline.value) {
+    ElMessage.warning("树莓派不在线，无法同步");
+    return;
+  }
+  syncingAll.value = true;
+  try {
+    const res = await syncAllUsers();
+    const data = res.data;
+    ElMessage.success(data.message || "同步完成");
+    await loadUsers();
+  } catch (err: any) {
+    ElMessage.error(err?.response?.data?.error || "同步失败");
+  } finally {
+    syncingAll.value = false;
   }
 }
 
@@ -216,7 +311,10 @@ function formatTime(t: string): string {
   return `${Math.floor(hours / 24)}天前`;
 }
 
-onMounted(loadUsers);
+onMounted(() => {
+  loadUsers();
+  checkPiStatus();
+});
 </script>
 
 <style scoped>
@@ -235,8 +333,38 @@ onMounted(loadUsers);
 .page-header h2 {
   font-size: 22px;
 }
+.header-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
 .search-input {
   width: 240px;
+}
+.search-input :deep(.el-input__wrapper) {
+  background: rgba(124, 58, 237, 0.08) !important;
+  border: 1px solid rgba(124, 58, 237, 0.25) !important;
+  box-shadow: none !important;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+.search-input :deep(.el-input__wrapper:hover) {
+  border-color: rgba(124, 58, 237, 0.45) !important;
+  background: rgba(124, 58, 237, 0.12) !important;
+}
+.search-input :deep(.el-input__wrapper.is-focus) {
+  border-color: var(--accent) !important;
+  background: rgba(124, 58, 237, 0.14) !important;
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.15) !important;
+}
+.search-input :deep(.el-input__inner) {
+  color: var(--text-primary);
+}
+.search-input :deep(.el-input__inner::placeholder) {
+  color: rgba(160, 160, 176, 0.5);
+}
+.search-input :deep(.el-icon) {
+  color: rgba(124, 58, 237, 0.5);
 }
 
 .user-grid {
@@ -261,6 +389,7 @@ onMounted(loadUsers);
   height: 180px;
   background: #000;
   overflow: hidden;
+  position: relative;
 }
 .card-photo img {
   width: 100%;
@@ -271,6 +400,26 @@ onMounted(loadUsers);
 .user-card:hover .card-photo img {
   transform: scale(1.05);
 }
+
+/* 同步状态角标 */
+.sync-badge {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #f0a020;
+  transition: all 0.3s;
+}
+.sync-badge.synced {
+  color: #67c23a;
+}
+
 .photo-placeholder {
   width: 100%;
   height: 100%;
@@ -310,6 +459,12 @@ onMounted(loadUsers);
 }
 .user-card:hover .delete-btn {
   opacity: 1;
+}
+
+.drawer-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
 }
 
 .pagination {

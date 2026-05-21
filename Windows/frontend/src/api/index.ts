@@ -25,9 +25,34 @@ export function getCameraStatus() {
   return api.get("/api/camera/status");
 }
 
+/** 获取 Pi 连接状态 */
+export function getPiStatus() {
+  return api.get("/api/pi/status");
+}
+
 /** 注册人员（上传照片 + 姓名） */
 export function registerUser(formData: FormData) {
   return api.post("/api/register", formData, {
     headers: { "Content-Type": "multipart/form-data" },
   });
+}
+
+/** 同步单个用户到树莓派 */
+export function syncUser(userId: number) {
+  return api.post(`/api/users/${userId}/sync`);
+}
+
+/** 批量同步所有未同步用户到树莓派 */
+export function syncAllUsers() {
+  return api.post("/api/users/sync-all");
+}
+
+/** 获取系统配置 */
+export function getConfig() {
+  return api.get("/api/config");
+}
+
+/** 保存系统配置 */
+export function saveConfig(data: Record<string, unknown>) {
+  return api.put("/api/config", data);
 }
