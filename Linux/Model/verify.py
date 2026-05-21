@@ -7,8 +7,8 @@ import onnxruntime as ort
 # Suppress onnxruntime warnings
 ort.set_default_logger_severity(3)
 
-MODEL_DIR = r"D:\FaceRecognition\Linux\Model\models\onnx_models\buffalo_sc"
-FEAT_DIR  = r"D:\FaceRecognition\Linux\Model\features"
+MODEL_DIR = os.environ.get("FACE_MODEL_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "onnx_models", "buffalo_sc"))
+FEAT_DIR  = os.environ.get("FACE_FEAT_DIR", os.path.join(os.path.dirname(os.path.abspath(__file__)), "features"))
 STRIDES   = [8, 16, 32]
 DET_MAX_SIDE = 480  # detect on max-480px input
 NMS_THRESH   = 0.4
