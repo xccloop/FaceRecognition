@@ -1,0 +1,18 @@
+# 微信小程序 — 开发环境
+.DS_Store
+node_modules/
+
+# 微信开发者工具
+*.log
+.idea/
+.vscode/
+
+# 微信开发者工具 — 个人配置（不同机器不同，不上传）
+project.private.config.json
+
+# 脚本工具
+.scripts/
+
+# 打包产物
+dist/
+build/
