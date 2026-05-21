@@ -27,6 +27,13 @@ venv/
 .env
 *.local.json
 
+# === 运行时文件（不提交） ===
+config.json
+request.log
+*.db
+photos/
+test_*.jpg
+
 # === 系统文件 ===
 .DS_Store
 Thumbs.db
