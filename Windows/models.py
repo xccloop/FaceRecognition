@@ -17,7 +17,7 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(50), nullable=False)
-    photo_path = Column(String(500), default="")
+    photo_url = Column(String(500), default="")
     feature_path = Column(String(500), default="")
     pi_synced = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
