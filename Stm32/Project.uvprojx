@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>USE_STDPERIPH_DRIVER, STM32F10X_MD</Define>
               <Undefine></Undefine>
-              <IncludePath>.\User;.\Core;.\System;.\Fwlib\inc;.\FreeRTOS\include;.\FreeRTOS\portable\RVDS\ARM_CM3</IncludePath>
+              <IncludePath>.\User;.\Comms;.\Protocol;.\Core;.\System;.\Fwlib\inc;.\FreeRTOS\include;.\FreeRTOS\portable\RVDS\ARM_CM3</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -393,6 +393,46 @@
               <FileName>stm32f10x_it.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\User\stm32f10x_it.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Comms</GroupName>
+          <Files>
+            <File>
+              <FileName>ringbuffer.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Comms\ringbuffer.c</FilePath>
+            </File>
+            <File>
+              <FileName>uart_dma.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Comms\uart_dma.c</FilePath>
+            </File>
+            <File>
+              <FileName>uart_port.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Comms\uart_port.c</FilePath>
+            </File>
+            <File>
+              <FileName>uart_api.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Comms\uart_api.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>Protocol</GroupName>
+          <Files>
+            <File>
+              <FileName>frame_protocol.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Protocol\frame_protocol.c</FilePath>
+            </File>
+            <File>
+              <FileName>cmd_handler.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Protocol\cmd_handler.c</FilePath>
             </File>
           </Files>
         </Group>

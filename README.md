@@ -70,14 +70,15 @@
 | UART DMA+RingBuffer | ✅ 完成 | USART1, DMA1 循环接收 + RingBuffer 缓冲 + 任务通知 |
 | 二进制帧协议 | ✅ 完成 | 0xAA/0x55 帧头尾, 0xBB 字节填充, XOR 校验, 变长数据段 |
 | LED 指示 | ✅ 完成 | PB5 + PE5 双 LED |
-| 独立看门狗 (IWDG) | ✅ 完成 | 2 秒超时, 500ms 喂狗定时器 |
+| 独立看门狗 (IWDG) | ✅ 完成 | ~2s 超时, 500ms 喂狗定时器 |
 | 心跳超时检测 | ✅ 完成 | 15 秒超时告警, 恢复自动清除 |
 | 命令分发 | ✅ 完成 | 5 条命令——识别成功/未注册/无人脸/多人脸/心跳 |
 | PC 串口联调 | ✅ 完成 | USB-TTL 通过 USART1 与 PC 通信, 全命令验证通过 |
+| **代码模块化重构** | ✅ 完成 | 目录拆分——Comms/(通信框架) + Protocol/(帧协议) + User/(装配) |
 | 继电器控制 | ⚠️ 待实现 | 需配合 Pi 端接入 |
 | 树莓派联调 | ⚠️ 待联调 | Pi 端就绪后对接 |
 
-**进度**：底层通信和协议 100% 完成，PC 端联调通过。待 Pi 端联调和继电器硬件对接。
+**进度**：底层通信和协议 100% 完成，PC 端联调通过，代码已完成模块化拆分。待 Pi 端联调和继电器硬件对接。
 
 ### 2.4 树莓派端（Linux/）— 人脸识别推理
 
@@ -253,12 +254,16 @@ FaceRecognition/
 ├── Stm32/                         # STM32 固件
 │   ├── Project.uvprojx            # Keil 工程文件
 │   ├── User/
-│   │   ├── main.c                 # 主程序（FreeRTOS + 帧协议 + 命令分发）
-│   │   ├── ringbuffer.c/h         # RingBuffer 实现
-│   │   ├── uart_dma.c/h           # DMA-UART 抽象层
-│   │   ├── uart_port.c/h          # SPL 硬件端口层
-│   │   ├── uart_api.c/h           # UART 便利层
+│   │   ├── main.c                 # 主程序（FreeRTOS 任务装配 + 外设驱动）
 │   │   └── stm32f10x_it.c         # 中断服务
+│   ├── Comms/                     # DMA+RingBuffer 通信框架
+│   │   ├── ringbuffer.c/h         # 环形缓冲队列
+│   │   ├── uart_dma.c/h           # DMA-UART 抽象层
+│   │   ├── uart_port.c/h          # SPL 硬件端口层 (IDLE 中断 + DMA CNDTR)
+│   │   └── uart_api.c/h           # UART 便利层 (互斥锁保护收发)
+│   ├── Protocol/                  # 帧协议 + 命令处理
+│   │   ├── frame_protocol.c/h     # 二进制帧协议编解码 + 转义状态机
+│   │   └── cmd_handler.c/h        # 5 条命令分发逻辑
 │   ├── FreeRTOS/                  # FreeRTOS 内核
 │   ├── Fwlib/                     # STM32 标准外设库
 │   └── doc/                       # STM32 端文档
