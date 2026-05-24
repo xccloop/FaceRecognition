@@ -2,11 +2,40 @@
 
 ## 环境准备
 
+### Python 版
+
 ```bash
-# 创建 conda 环境
 conda create -n facerec python=3.12 -y
 conda activate facerec
 pip install opencv-python onnxruntime numpy
+```
+
+### C++ 版（Windows）
+
+依赖：Visual Studio 2022、CMake 3.14+、OpenCV、ncnn。
+
+```powershell
+cd Model
+cmake -B build -G "Visual Studio 17 2022" -A x64 `
+      -DOpenCV_DIR="D:/ANACONDA/Library/cmake/x64/vc17/lib"
+cmake --build build --config Release
+
+# 运行前设置 PATH
+set PATH=%PATH%;D:\ANACONDA\Library\bin
+cd build\Release
+facerec.exe live
+```
+
+### C++ 版（树莓派）
+
+```bash
+sudo apt install -y build-essential cmake git libopencv-dev
+git clone https://github.com/Tencent/ncnn.git
+cd ncnn && git submodule update --init && mkdir build && cd build
+cmake -DCMAKE_BUILD_TYPE=Release -DNCNN_VULKAN=OFF -DNCNN_BUILD_EXAMPLES=OFF ..
+make -j4 && sudo make install
+cd Model && cmake -B build && cmake --build build -j4
+./build/facerec test test.jpg
 ```
 
 ---
@@ -16,7 +45,11 @@ pip install opencv-python onnxruntime numpy
 拍一张正脸照（白底、光线好、脸占画面 1/3 以上），保存为 `my_face.jpg`：
 
 ```bash
+# Python
 python verify.py register my_face.jpg "我的名字"
+
+# C++
+facerec register my_face.jpg "我的名字"
 ```
 
 输出：
@@ -34,7 +67,11 @@ Registering '我的名字' from my_face.jpg (1120x2676)...
 ## 二、照片识别
 
 ```bash
+# Python
 python verify.py identify test.jpg
+
+# C++
+facerec identify test.jpg
 ```
 
 输出：
@@ -54,7 +91,11 @@ Identifying from test.jpg (1120x2676)...
 ## 三、1:1 比对
 
 ```bash
+# Python
 python verify.py compare img1.jpg img2.jpg
+
+# C++
+facerec compare img1.jpg img2.jpg
 ```
 
 输出：
@@ -71,23 +112,29 @@ Comparing img1.jpg vs img2.jpg...
 ## 四、实时摄像头
 
 ```bash
+# Python
 python verify.py live
+
+# C++
+facerec live
 ```
 
 界面显示：
-- 人脸框 + 5 个关键点（黄点）
+- 人脸框 + 5 个关键点（红点）
 - 已注册者：绿框 + 名字 + 置信度
-- 未注册者：橙框 + "?" + 分数
-- 左上角 FPS
-- 按 **Q** 退出
+- 未注册者：不显示（C++ 版）
+- 左上角 FPS / Detect ms / Extract ms
+- 按 **Q** 退出，**R** 注册当前人脸，**I** 识别，**S** 截图
 
 **摄像头命令**：
 ```bash
-# 先注册
+# Python
 python verify.py register my_face.jpg xzc
-
-# 启动摄像头
 python verify.py live
+
+# C++
+facerec register my_face.jpg xzc
+facerec live
 ```
 
 ---
@@ -110,12 +157,13 @@ rm features/某名字.bin
 
 ```
 models/
-├── onnx_models/buffalo_sc/  ← ONNX 源模型（推理用）
+├── onnx_models/buffalo_sc/  ← ONNX 源模型（Python 推理用）
 │   ├── det_500m.onnx         ← SCRFD 人脸检测
 │   └── w600k_mbf.onnx        ← MobileFaceNet 特征提取
-└── ncnn_models/              ← ncnn 模型（树莓派 C++ 用，需修复）
-    ├── det_500m.param / .bin
-    └── w600k_mbf.param / .bin
+└── ncnn_models/              ← ncnn 模型（C++ 推理用）
+    ├── det_500m_dyn.param / .bin  ← SCRFD（动态 Interp，推荐）
+    ├── det_500m.param / .bin      ← SCRFD（固定 640×480，备用）
+    └── w600k_mbf.param / .bin     ← MobileFaceNet
 ```
 
 ---

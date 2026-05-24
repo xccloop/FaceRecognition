@@ -5,6 +5,7 @@
 FeatureExtractor::FeatureExtractor(const char* param_path, const char* bin_path)
 {
     net_.opt.use_vulkan_compute = false;
+    net_.opt.num_threads = 4;
     net_.load_param(param_path);
     net_.load_model(bin_path);
 }
@@ -17,11 +18,13 @@ std::vector<float> FeatureExtractor::extract(const cv::Mat& aligned_bgr)
                                           aligned_bgr.cols, aligned_bgr.rows);
     in.substract_mean_normalize(MEAN, NORM);
 
-    ncnn::Extractor ex = net_.create_extractor();
-    ex.input("input.1", in);
-
     ncnn::Mat out;
-    ex.extract("516", out);
+    {
+        // Reuse extractor — light-weight object, no need to store as member
+        ncnn::Extractor ex = net_.create_extractor();
+        ex.input("input.1", in);
+        ex.extract("516", out);
+    }
 
     std::vector<float> feat(out.w);
     for (int i = 0; i < out.w; i++)

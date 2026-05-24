@@ -1,7 +1,7 @@
 """Pi 端注册 API 服务
 
 Flask HTTP API，接收 Windows 端发来的照片+姓名，
-调用本地 verify.py 完成人脸检测→对齐→特征提取→保存 .bin，
+调用 C++ facerec register 完成人脸检测→对齐→特征提取→保存 .bin，
 返回注册结果（含人脸得分、特征维度等）。
 
 启动方式：
@@ -15,8 +15,8 @@ Flask HTTP API，接收 Windows 端发来的照片+姓名，
   GET  /api/features                     # 列出已注册特征
 
 依赖（树莓派端）：
-  pip install flask numpy opencv-python onnxruntime
-  verify.py + models/ 目录
+  pip install flask numpy opencv-python
+  facerec (C++ 编译产物) 需在 ../build/facerec 或 PATH 中
 """
 
 import sys
@@ -24,7 +24,10 @@ import os
 import io
 import json
 import base64
+import struct
 import argparse
+import subprocess
+import tempfile
 import traceback
 from pathlib import Path
 
@@ -32,17 +35,17 @@ import cv2
 import numpy as np
 from flask import Flask, request, jsonify
 
-# ── 切换到脚本目录（确保 verify.py 的 MODEL_DIR/FEAT_DIR 相对路径正确）──
+# ── 配置 ──
 SCRIPT_DIR = Path(__file__).resolve().parent
 os.chdir(SCRIPT_DIR)
 
-# ── 导入 verify.py 函数（ONNX 模型会在此时加载） ──
+# C++ facerec 可执行文件路径
+FACEREC_BIN = os.environ.get("FACEREC_BIN",
+    str(SCRIPT_DIR / "build" / "facerec"))
+
 print(f"[pi_server] 脚本目录: {SCRIPT_DIR}")
-print(f"[pi_server] 加载 ONNX 模型...")
-
-from verify import detect, align, extract, save_feat, load_registry, MATCH_THRESH
-
-print(f"[pi_server] 模型加载完成")
+print(f"[pi_server] facerec 路径: {FACEREC_BIN}")
+print(f"[pi_server] 初始化完成")
 
 # ── Flask 应用 ──
 app = Flask(__name__)
@@ -52,38 +55,81 @@ app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
 
 def _register_from_image(img_bgr: np.ndarray, name: str) -> dict:
-    """从 OpenCV BGR 图像执行注册流程，返回结果字典"""
-    faces = detect(img_bgr)
-    if not faces:
-        return {"success": False, "error": "未检测到人脸", "face_score": None}
+    """将图像保存为临时文件，调用 C++ facerec register 完成注册"""
+    # 检查 facerec 是否存在
+    if not os.path.exists(FACEREC_BIN):
+        return {"success": False, "error": f"facerec 未找到: {FACEREC_BIN}"}
 
-    # 取置信度最高的人脸
-    faces.sort(key=lambda f: f[4], reverse=True)
-    f = faces[0]
-    face_score = float(f[4])
-    bbox = [float(f[0]), float(f[1]), float(f[2]), float(f[3])]
+    # 写入临时文件
+    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+        tmp_path = tmp.name
+        cv2.imwrite(tmp_path, img_bgr)
 
-    # 对齐 → 提取特征
-    aligned = align(img_bgr, f[5])
-    feat = extract(aligned)
+    try:
+        # 调用 C++ facerec register
+        result = subprocess.run(
+            [FACEREC_BIN, "register", tmp_path, name],
+            capture_output=True, text=True, timeout=30,
+            cwd=str(SCRIPT_DIR / "build")
+        )
+        stdout = result.stdout.strip()
+        stderr = result.stderr.strip()
 
-    # 保存特征
-    save_feat(name, feat)
+        if result.returncode != 0:
+            error_msg = stderr or stdout or f"退出码 {result.returncode}"
+            # 解析常见错误
+            if "CMD_NOFACE" in error_msg:
+                return {"success": False, "error": "未检测到人脸", "face_score": None}
+            return {"success": False, "error": error_msg}
 
-    return {
-        "success": True,
-        "name": name,
-        "face_score": round(face_score, 4),
-        "feature_dim": len(feat),
-        "bbox": [round(v, 1) for v in bbox],
-        "message": f"'{name}' 注册成功，特征已保存",
-    }
+        # 解析输出
+        face_score = None
+        for line in stdout.split("\n"):
+            if "score=" in line:
+                try:
+                    face_score = float(line.split("score=")[1].split()[0])
+                except (ValueError, IndexError):
+                    pass
+
+        # 验证特征文件已生成
+        feat_path = SCRIPT_DIR / "build" / "features" / f"{name}.bin"
+        feature_dim = 0
+        if feat_path.exists():
+            with open(feat_path, "rb") as f:
+                dim_bytes = f.read(4)
+                if len(dim_bytes) == 4:
+                    feature_dim = struct.unpack("i", dim_bytes)[0]
+
+        return {
+            "success": True,
+            "name": name,
+            "face_score": round(face_score, 4) if face_score else None,
+            "feature_dim": feature_dim,
+            "message": f"'{name}' 注册成功，特征已保存 (dim={feature_dim})",
+        }
+
+    except subprocess.TimeoutExpired:
+        return {"success": False, "error": "注册超时（>30s）"}
+    finally:
+        os.unlink(tmp_path)
+
+
+def _load_registry():
+    """读取 features/ 目录下的 .bin 文件列表"""
+    feat_dir = SCRIPT_DIR / "build" / "features"
+    if not feat_dir.exists():
+        return {}
+    registry = {}
+    for fn in feat_dir.iterdir():
+        if fn.suffix == ".bin":
+            registry[fn.stem] = str(fn)
+    return registry
 
 
 @app.route("/api/health")
 def health():
     """在线检测"""
-    registry = load_registry()
+    registry = _load_registry()
     return jsonify({
         "status": "ok",
         "service": "pi-face-register",
@@ -174,11 +220,11 @@ def register_base64():
 @app.route("/api/features")
 def list_features():
     """列出已注册的特征"""
-    registry = load_registry()
+    registry = _load_registry()
     return jsonify({
         "count": len(registry),
         "users": list(registry.keys()),
-        "feature_dir": str(SCRIPT_DIR / "features"),
+        "feature_dir": str(SCRIPT_DIR / "build" / "features"),
     })
 
 

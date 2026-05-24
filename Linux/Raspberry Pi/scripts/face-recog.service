@@ -1,0 +1,29 @@
+[Unit]
+Description=四端协同人脸识别 - 树莓派端 (C++/ncnn)
+Documentation=https://github.com/XiangZhiChang/FaceRecognition
+After=network.target multi-user.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/pi/facerec/Model/build
+
+# C++ 识别主程序（摄像头 → 检测 → 识别 → UART）
+ExecStart=/home/pi/facerec/Model/build/facerec live
+
+# 优雅关闭
+ExecStop=/bin/kill -SIGTERM $MAINPID
+KillMode=process
+TimeoutStopSec=10
+
+# 自动重启
+Restart=on-failure
+RestartSec=5
+
+# 日志
+StandardOutput=append:/var/log/face-recog.log
+StandardError=append:/var/log/face-recog.log
+
+[Install]
+WantedBy=multi-user.target

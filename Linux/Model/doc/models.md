@@ -54,9 +54,12 @@ ONNX → onnxsim(简化) → onnx2ncnn(.param+.bin) → ncnnoptimize(算子融�
 
 ```
 ncnn_models/
-├── det_500m.param     (10 KB) / .bin (2.4 MB)
-└── w600k_mbf.param    (9 KB)  / .bin (13.0 MB)
+├── det_500m_dyn.param / .bin  ← SCRFD（Interp 动态化，推荐使用）
+├── det_500m.param / .bin      ← SCRFD（原始转换，仅适配 640×480）
+└── w600k_mbf.param / .bin     ← MobileFaceNet（Gemm+BN 已融合）
 ```
+
+> **注意**：`det_500m.param` 的 Interp 层硬编码了 640×480 对应的输出尺寸，仅支持固定尺寸输入。`det_500m_dyn.param` 将 Interp 改为 2× 比例缩放（`output_height=0 output_width=0`），支持任意尺寸输入，与 Python ONNX 管线行为一致。详见 `doc/ncnn-alignment.md`。
 
 ---
 

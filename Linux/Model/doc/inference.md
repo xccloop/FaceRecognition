@@ -16,25 +16,37 @@
 
 | 实现 | 语言 | 推理引擎 | 状态 | 用途 |
 |------|------|----------|------|------|
-| `src/*.cpp` | C++ | ncnn | 🟡 待修复 | 树莓派最终部署（高性能） |
+| `src/*.cpp` | C++ | ncnn | 🟢 可用 | 树莓派最终部署（高性能） |
 | `verify.py` | Python | onnxruntime | 🟢 可用 | PC 验证 + 实时摄像头 |
 
-C++ 版当前受限于 ncnn 自定义层（Shape/Gather）转换不完全，见 `troubleshooting.md` 问题 6-7。Python 版用 onnxruntime 原生支持所有 ONNX 算子，无需自定义层。
+两套实现在预处理、阈值、模型行为上已对齐，识别精度一致。模型使用 `det_500m_dyn.param`（Interp 层动态化版本），详见 `doc/ncnn-alignment.md`。
 
 **树莓派部署路径**：
 1. 最简单：Python + onnxruntime（RPi 上 ~2-4 FPS）
-2. 中等：C++ + onnxruntime C++ API（~5-10 FPS）
-3. 最快：等 ncnn 转换问题解决后，C++ + ncnn（~10-20 FPS）
+2. 推荐：C++ + ncnn（~10-20 FPS）
+3. 备选：C++ + onnxruntime C++ API（~5-10 FPS）
 
 ---
 
-## 运行模式（verify.py）
+## 运行模式
+
+### Python（`verify.py`）
 
 ```
 verify.py register <photo.jpg> <name>   # 注册人脸
 verify.py identify <photo.jpg>          # 识别是谁
 verify.py compare <img1.jpg> <img2.jpg> # 比对两张脸
 verify.py live                          # 实时摄像头
+```
+
+### C++（`facerec`）
+
+```
+facerec register <photo.jpg> <name>     # 注册人脸
+facerec identify <photo.jpg>            # 识别是谁
+facerec compare <img1.jpg> <img2.jpg>   # 比对两张脸
+facerec live                            # 实时摄像头
+facerec test <photo.jpg>                # 调试：打印检测详情
 ```
 
 ---
@@ -148,16 +160,16 @@ Model/
 ├── CMakeLists.txt              # C++ 构建
 ├── verify.py                   # Python 验证 + 实时摄像头
 ├── inc/                        # C++ 头文件
-│   ├── facedetector.h / facealigner.h / featureextractor.h / custom_layers.h
+│   ├── facedetector.h / facealigner.h / featureextractor.h
 ├── src/                        # C++ 实现
 │   ├── main.cpp / facedetector.cpp / facealigner.cpp / featureextractor.cpp
-│   └── custom_layers.cpp
 ├── models/
 │   ├── onnx_models/buffalo_sc/ # ONNX 源模型
-│   └── ncnn_models/            # ncnn 转换模型
+│   └── ncnn_models/            # ncnn 转换模型（含 det_500m_dyn）
 ├── features/                   # 注册的人脸特征
 └── doc/
     ├── models.md               # 模型方案 & 性能优化
     ├── inference.md            # 本文档
-    └── troubleshooting.md      # 11 个问题排查
+    ├── ncnn-alignment.md       # C++/ncnn 与 Python/ONNX 精度对齐
+    └── troubleshooting.md      # 12 个问题排查
 ```

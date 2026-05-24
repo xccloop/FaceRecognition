@@ -2,6 +2,7 @@
 
 #include <opencv2/imgproc.hpp>
 #include <opencv2/calib3d.hpp>
+#include <stdexcept>
 
 cv::Mat FaceAligner::getReferenceMatrix(int out_size)
 {
@@ -35,9 +36,7 @@ cv::Mat FaceAligner::align(const cv::Mat& src, const float keypoints[5][2], int 
     cv::Mat M = cv::estimateAffinePartial2D(src_pts, ref);
 
     if (M.empty()) {
-        // Fallback: use simple crop around bbox center
-        cv::Rect roi(0, 0, out_size, out_size);
-        return cv::Mat::zeros(out_size, out_size, CV_8UC3);
+        throw std::runtime_error("FaceAligner::align failed: cannot estimate affine transform");
     }
 
     cv::Mat aligned;
