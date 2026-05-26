@@ -160,10 +160,15 @@
           >
             同步到树莓派
           </el-button>
-          <el-tag v-else type="success" style="flex: 1; text-align: center; padding: 8px 0">
-            <el-icon style="margin-right: 4px"><Check /></el-icon>
-            已同步到 Pi
-          </el-tag>
+          <el-button
+            v-if="drawerUser.pi_synced"
+            type="warning"
+            :loading="deletingPiId === drawerUser.id"
+            style="flex: 1"
+            @click="deleteFromPi(drawerUser)"
+          >
+            从 Pi 删除
+          </el-button>
           <el-button
             type="danger"
             style="flex: 1"
@@ -181,7 +186,7 @@
 import { ref, computed, onMounted } from "vue";
 import { Delete, UserFilled, Upload, Check, Clock } from "@element-plus/icons-vue";
 import { ElMessage, ElMessageBox } from "element-plus";
-import { getUsers, deleteUser, syncUser, syncAllUsers, getPiStatus } from "../api";
+import { getUsers, deleteUser, deleteUserFromPi, syncUser, syncAllUsers, getPiStatus } from "../api";
 
 interface UserItem {
   id: number;
@@ -201,6 +206,7 @@ const drawerVisible = ref(false);
 const drawerUser = ref<UserItem | null>(null);
 const syncingId = ref(0);
 const syncingAll = ref(false);
+const deletingPiId = ref(0);
 const piOnline = ref(false);
 
 const unsyncedCount = computed(() =>
@@ -242,6 +248,8 @@ async function syncOne(user: UserItem) {
     await syncUser(user.id);
     ElMessage.success(`已将 ${user.name} 同步到树莓派`);
     await loadUsers();
+    const updated = users.value.find(u => u.id === user.id);
+    if (updated) drawerUser.value = updated;
   } catch (err: any) {
     ElMessage.error(err?.response?.data?.error || "同步失败");
   } finally {
@@ -264,6 +272,30 @@ async function syncAll() {
     ElMessage.error(err?.response?.data?.error || "同步失败");
   } finally {
     syncingAll.value = false;
+  }
+}
+
+async function deleteFromPi(user: UserItem) {
+  if (!piOnline.value) {
+    ElMessage.warning("树莓派不在线，无法操作");
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      `确认从树莓派删除「${user.name}」的特征？Windows 端数据保留。`,
+      "从 Pi 删除",
+      { type: "warning", confirmButtonText: "删除", cancelButtonText: "取消" }
+    );
+    deletingPiId.value = user.id;
+    await deleteUserFromPi(user.id);
+    ElMessage.success(`已从树莓派删除 ${user.name}`);
+    await loadUsers();
+    const updated = users.value.find(u => u.id === user.id);
+    if (updated) drawerUser.value = updated;
+  } catch {
+    // 取消
+  } finally {
+    deletingPiId.value = 0;
   }
 }
 

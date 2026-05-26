@@ -26,6 +26,7 @@ venv/
 # === 敏感文件 ===
 .env
 *.local.json
+.gh_token
 
 # === 运行时文件（不提交） ===
 config.json
@@ -37,3 +38,33 @@ test_*.jpg
 # === 系统文件 ===
 .DS_Store
 Thumbs.db
+
+# === Claude Code ===
+.claude/
+.hermes/
+.scripts/
+
+# === STM32 编译/调试 ===
+Output/
+DebugConfig/
+RTE/
+*.uvguix.*
+*.uvoptx
+*.saved_uv4
+
+# === 模型二进制 (过大) ===
+*.onnx
+*.zip
+ncnn-tools/
+ncnn_models_new/
+ncnn_new/
+simplified/
+
+# === 临时文件 ===
+temp/
+_diag_*.jpg
+nul
+6.0
+release_body.json
+*.log
+error.txt

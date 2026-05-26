@@ -2,7 +2,7 @@
 SQLAlchemy ORM 模型定义
 """
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, create_engine
+from sqlalchemy import Column, Integer, String, Float, Boolean, DateTime, ForeignKey, create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker
 from config import DATABASE_URL
 
@@ -20,6 +20,21 @@ class User(Base):
     photo_url = Column(String(500), default="")
     feature_path = Column(String(500), default="")
     pi_synced = Column(Boolean, default=False)
+    pi_sync_status = Column(String(16), default="pending")
+    pi_sync_error = Column(String(512), default="")
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class SyncTask(Base):
+    """Pi 同步任务队列 — 持久化存储，进程重启不丢失"""
+    __tablename__ = "sync_tasks"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    retry_count = Column(Integer, default=0)
+    next_retry_at = Column(DateTime, nullable=False)
+    status = Column(String(16), default="pending")
+    error_message = Column(String(512), default="")
     created_at = Column(DateTime, default=datetime.utcnow)
 
 

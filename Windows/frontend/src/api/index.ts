@@ -15,9 +15,14 @@ export function getUsers(page = 1, pageSize = 12, search = "") {
   return api.get("/api/users", { params: { page, page_size: pageSize, search } });
 }
 
-/** 删除人员 */
+/** 删除人员（仅删数据库，保留照片） */
 export function deleteUser(id: number) {
   return api.delete(`/api/users/${id}`);
+}
+
+/** 从树莓派删除特征（保留 Windows 数据） */
+export function deleteUserFromPi(id: number) {
+  return api.delete(`/api/users/${id}/pi`);
 }
 
 /** 获取摄像头状态 */

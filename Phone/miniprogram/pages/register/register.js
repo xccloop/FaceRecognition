@@ -1,97 +1,138 @@
 "use strict";
 
 /**
- * register.js — 人脸采集注册页面逻辑
+ * register.js — 人脸采集注册页面逻辑 (v2: ES6 + 扫码 + 最近列表 + 连接测试)
  *
- * 数据流：
- *   点击拍照 → wx.requirePrivacyAuthorize() 触发微信官方隐私弹窗
- *   用户同意 → wx.chooseMedia 获取照片
- *   输入姓名  → name 写入 data
- *   点击提交  → wx.uploadFile POST /api/register
- *   返回结果  → data.result 更新，渲染成功/失败 UI
- *
- * v0.3.0 新增：服务器设置弹窗（配置 Windows 后台 IP + 端口 + 连接测试）
+ * @summary 数据流：
+ *   拍照/选图 → 输入姓名 → 上传到 Windows 后台 → 后台异步同步到 Pi
  *
  * @author 向治昌
  */
 
 /* ================================================================
- * 内联 API 工具函数（避免模块顶层 require() 在真机加载失败）
+ * API 工具函数
  * ================================================================ */
+
+/**
+ * 规范化服务器 URL，仅保留协议+IP+端口
+ * @param {string} input - 用户输入或扫码结果
+ * @param {number} defaultPort - 当前默认端口
+ * @returns {{ baseUrl: string, ip: string, port: number }|null}
+ */
+const normalizeUrl = (input, defaultPort) => {
+  if (defaultPort === undefined) defaultPort = 8000;
+  let s = (input || "").trim();
+  if (!s) return null;
+
+  // 去除协议前缀
+  let protocol = "http";
+  if (s.startsWith("http://")) { s = s.slice(7); }
+  else if (s.startsWith("https://")) { protocol = "https"; s = s.slice(8); }
+
+  // 去除路径和尾随斜杠
+  const slashIdx = s.indexOf("/");
+  if (slashIdx >= 0) s = s.slice(0, slashIdx);
+  s = s.replace(/\/+$/, "");
+
+  // 拆分 IP:端口
+  let ip, port;
+  if (s.includes(":")) {
+    const parts = s.split(":");
+    ip = parts[0];
+    port = parseInt(parts[1], 10) || defaultPort;
+  } else {
+    ip = s;
+    port = defaultPort;
+  }
+
+  if (!ip || port < 1 || port > 65535) return null;
+
+  return { baseUrl: `${protocol}://${ip}:${port}`, ip, port };
+};
 
 /**
  * 从本地存储读取已保存的服务器配置
  * @returns {{ baseUrl: string, ip: string, port: number, timeout: number }|null}
  */
-function getSavedConfig() {
+const getSavedConfig = () => {
   try {
-    var config = wx.getStorageSync("server_config");
+    const config = wx.getStorageSync("server_config");
     if (config && config.baseUrl) return config;
-  } catch (e) {}
+  } catch (e) { /* ignore */ }
   return null;
-}
+};
 
 /**
  * 获取服务器基地址
  * 优先级：本地存储 > app.globalData > 默认值
  * @returns {string}
  */
-function getBaseUrl() {
-  // 1. 优先从本地存储读取
-  var saved = getSavedConfig();
+const getBaseUrl = () => {
+  const saved = getSavedConfig();
   if (saved) return saved.baseUrl;
-
-  // 2. 回退到全局数据
   try {
-    var app = getApp();
-    var config = app.globalData.serverConfig;
+    const app = getApp();
+    const config = app.globalData.serverConfig;
     if (config && config.baseUrl) return config.baseUrl;
-  } catch (e) {}
-
-  // 3. 最终回退
-  return "http://192.168.1.5:8000";
-}
+  } catch (e) { /* ignore */ }
+  return "http://192.168.1.5:8081";
+};
 
 /**
- * 获取请求超时时间（毫秒）
+ * 获取请求超时（毫秒）
  * @returns {number}
  */
-function getTimeout() {
-  var saved = getSavedConfig();
+const getTimeout = () => {
+  const saved = getSavedConfig();
   if (saved && saved.timeout) return saved.timeout;
-
   try {
-    var app = getApp();
-    var config = app.globalData.serverConfig;
+    const app = getApp();
+    const config = app.globalData.serverConfig;
     if (config && config.timeout) return config.timeout;
-  } catch (e) {}
-
+  } catch (e) { /* ignore */ }
   return 10000;
-}
+};
 
-/**
- * 人脸注册接口 URL
- * @returns {string}
- */
-function registerUrl() {
-  return getBaseUrl() + "/api/register";
-}
+/** @returns {string} */
+const registerUrl = () => getBaseUrl() + "/api/register";
 
 /* ================================================================
- * 提取当前服务器地址信息（用于页面展示）
+ * 最近使用服务器列表
  * ================================================================ */
 
-function getServerDisplayInfo() {
-  var url = getBaseUrl();
-  // 从 "http://192.168.1.5:8000" 提取显示文本
-  var display = url.replace("http://", "").replace("https://", "");
-  var hasConfig = !!getSavedConfig();
-  return {
-    full: url,
-    display: display,
-    configured: hasConfig
-  };
-}
+const RECENT_KEY = "recent_servers";
+const MAX_RECENT = 3;
+
+const getRecentServers = () => {
+  try {
+    const list = wx.getStorageSync(RECENT_KEY);
+    return Array.isArray(list) ? list : [];
+  } catch (e) { return []; }
+};
+
+const saveRecentServers = (list) => {
+  wx.setStorageSync(RECENT_KEY, list.slice(0, MAX_RECENT));
+};
+
+/**
+ * 将 baseUrl 添加到最近使用列表头部
+ * @param {string} baseUrl
+ */
+const addToRecent = (baseUrl) => {
+  const list = getRecentServers().filter(item => item.baseUrl !== baseUrl);
+  list.unshift({ baseUrl, lastUsed: Date.now() });
+  saveRecentServers(list);
+};
+
+/**
+ * 提取服务器显示信息
+ * @returns {{ full: string, display: string, configured: boolean }}
+ */
+const getServerDisplayInfo = () => {
+  const url = getBaseUrl();
+  const display = url.replace("http://", "").replace("https://", "");
+  return { full: url, display, configured: !!getSavedConfig() };
+};
 
 /* ================================================================
  * Page 定义
@@ -99,15 +140,12 @@ function getServerDisplayInfo() {
 
 Page({
 
-  /**
-   * 页面初始数据
-   */
   data: {
     /** @type {string} 临时照片路径 */
     photoPath: "",
     /** @type {string} 姓名 */
     name: "",
-    /** @type {boolean} 姓名是否有效（trim 后有内容） */
+    /** @type {boolean} 姓名是否有效 */
     nameValid: false,
     /** @type {null|{success: boolean, message: string}} 提交结果 */
     result: null,
@@ -115,40 +153,37 @@ Page({
     submitting: false,
 
     /* ── 服务器设置 ── */
-    /** @type {boolean} 设置弹窗是否显示 */
     showSettings: false,
-    /** @type {string} 设置弹窗中的 IP 输入 */
     serverIp: "192.168.1.5",
-    /** @type {string} 设置弹窗中的端口输入 */
     serverPort: "8000",
-    /** @type {null|{success: boolean, message: string}} 连接测试结果 */
     testResult: null,
-    /** @type {boolean} 是否正在测试连接 */
     testing: false,
-    /** @type {string} 页面顶部显示的服务器地址 */
     serverDisplay: "",
-    /** @type {boolean} 是否已手动配置过服务器 */
-    serverConfigured: false
+    serverConfigured: false,
+
+    /* ── 最近使用列表 ── */
+    recentServers: [],
   },
 
   /* ================================================================
    * 生命周期
    * ================================================================ */
 
-  onLoad: function () {
-    var info = getServerDisplayInfo();
+  onLoad() {
+    const info = getServerDisplayInfo();
     this.setData({
       serverDisplay: info.display,
-      serverConfigured: info.configured
+      serverConfigured: info.configured,
+      recentServers: getRecentServers(),
     });
   },
 
-  onShow: function () {
-    // 每次页面显示时刷新服务器地址（用户可能从设置改了配置）
-    var info = getServerDisplayInfo();
+  onShow() {
+    const info = getServerDisplayInfo();
     this.setData({
       serverDisplay: info.display,
-      serverConfigured: info.configured
+      serverConfigured: info.configured,
+      recentServers: getRecentServers(),
     });
   },
 
@@ -156,90 +191,51 @@ Page({
    * 拍照 / 选图
    * ================================================================ */
 
-  /**
-   * 从摄像头拍照
-   */
-  takePhoto: function () {
-    this.selectMedia(["camera"]);
-  },
+  takePhoto() { this.selectMedia(["camera"]); },
+  chooseFromAlbum() { this.selectMedia(["album"]); },
 
-  /**
-   * 从相册选图
-   */
-  chooseFromAlbum: function () {
-    this.selectMedia(["album"]);
-  },
-
-  /**
-   * 点击照片区域 — 弹出选择面板
-   */
-  choosePhoto: function () {
-    var that = this;
+  choosePhoto() {
     wx.showActionSheet({
       itemList: ["拍照", "从相册选择"],
-      success: function (res) {
-        if (res.tapIndex === 0) {
-          that.takePhoto();
-        } else {
-          that.chooseFromAlbum();
-        }
-      }
+      success: (res) => {
+        if (res.tapIndex === 0) this.takePhoto();
+        else this.chooseFromAlbum();
+      },
     });
   },
 
   /**
-   * 入口：先触发微信官方隐私弹窗，通过后再选图
-   *
-   * wx.requirePrivacyAuthorize() 是微信官方 API，会自动：
-   *   1. 检查用户是否已同意隐私协议
-   *   2. 若未同意，弹出微信原生隐私保护指引弹窗
-   *   3. 弹窗中自动声明 chooseMedia 等权限范围
-   *   4. 用户同意后 resolve，不同意则 reject
-   *
+   * 先触发微信隐私弹窗，通过后再选图
    * @param {string[]} sourceType - ['camera'] | ['album']
    */
-  selectMedia: function (sourceType) {
-    var that = this;
-
+  selectMedia(sourceType) {
     wx.requirePrivacyAuthorize({
-      success: function () {
-        // 用户已同意隐私协议，执行选图
-        that._doChooseMedia(sourceType);
-      },
-      fail: function () {
+      success: () => { this._doChooseMedia(sourceType); },
+      fail: () => {
         console.warn("[register] 用户未同意隐私协议");
         wx.showToast({ title: "请先同意隐私保护指引", icon: "none" });
-      }
+      },
     });
   },
 
-  /**
-   * 实际调用 wx.chooseMedia（隐私授权通过后执行）
-   * @param {string[]} sourceType
-   * @private
-   */
-  _doChooseMedia: function (sourceType) {
-    var that = this;
+  /** @param {string[]} sourceType */
+  _doChooseMedia(sourceType) {
     wx.chooseMedia({
       count: 1,
       mediaType: ["image"],
-      sourceType: sourceType,
-      sizeType: ["compressed"],
-      success: function (res) {
-        var file = res.tempFiles[0];
-        that.setData({
-          photoPath: file.tempFilePath,
-          result: null   // 清除上次结果
-        });
-        console.log("[register] 已选照片:", file.tempFilePath, "大小:", file.size);
+      sourceType,
+      sizeType: ["compressed"],  // 微信单次压缩，不再二次压缩避免损识别率
+      success: (res) => {
+        const file = res.tempFiles[0];
+        this.setData({ photoPath: file.tempFilePath, result: null });
+        console.log(`[register] 已选照片: ${file.tempFilePath} 大小: ${file.size}`);
       },
-      fail: function (err) {
-        // 用户取消操作不提示
+      fail: (err) => {
         if (err.errMsg && err.errMsg.indexOf("cancel") === -1) {
           console.warn("[register] chooseMedia 失败:", err.errMsg);
           wx.showToast({ title: "获取图片失败", icon: "none" });
         }
-      }
+      },
     });
   },
 
@@ -247,15 +243,11 @@ Page({
    * 输入处理
    * ================================================================ */
 
-  /**
-   * 姓名输入事件
-   * @param {WechatMiniprogram.Input} e
-   */
-  onNameInput: function (e) {
-    var trimmed = e.detail.value.trim();
+  onNameInput(e) {
+    const trimmed = e.detail.value.trim();
     this.setData({
       name: e.detail.value,
-      nameValid: trimmed.length > 0
+      nameValid: trimmed.length > 0,
     });
   },
 
@@ -263,96 +255,72 @@ Page({
    * 表单提交
    * ================================================================ */
 
-  /**
-   * 提交注册 — 表单验证 + 文件上传
-   */
-  submitRegister: function () {
-    var that = this;
-    var photoPath = this.data.photoPath;
-    var name = this.data.name;
+  submitRegister() {
+    const photoPath = this.data.photoPath;
+    const name = this.data.name;
 
-    // 表单验证
     if (!photoPath) {
       wx.showToast({ title: "请先拍照或选择照片", icon: "none" });
       return;
     }
 
-    var trimmedName = name.trim();
+    const trimmedName = name.trim();
     if (!trimmedName) {
       wx.showToast({ title: "请输入姓名", icon: "none" });
       return;
     }
 
-    if (trimmedName.length < 1) {
-      wx.showToast({ title: "姓名不能为空", icon: "none" });
-      return;
-    }
-
-    // 进入提交状态
     this.setData({ submitting: true });
     wx.showLoading({ title: "上传中...", mask: true });
 
-    // 上传到 Windows 后台
     wx.uploadFile({
       url: registerUrl(),
       filePath: photoPath,
       name: "photo",
       formData: { name: trimmedName },
       timeout: getTimeout(),
-      success: function (res) {
+      success: (res) => {
         wx.hideLoading();
-        that.setData({ submitting: false });
+        this.setData({ submitting: false });
 
-        // 检查 HTTP 状态码
         if (res.statusCode !== 200) {
-          that.setData({
-            result: {
-              success: false,
-              message: "服务器错误 (HTTP " + res.statusCode + ")"
-            }
+          this.setData({
+            result: { success: false, message: `服务器错误 (HTTP ${res.statusCode})` },
           });
           return;
         }
 
-        // 解析响应
-        var data;
+        let data;
         try {
           data = JSON.parse(res.data);
         } catch (e) {
           console.error("[register] JSON 解析失败:", res.data);
-          that.setData({
-            result: { success: false, message: "服务器响应格式错误" }
-          });
+          this.setData({ result: { success: false, message: "服务器响应格式错误" } });
           return;
         }
 
-        // 判断业务状态码
         if (data.success === true) {
-          that.setData({
-            result: {
-              success: true,
-              message: "注册成功：" + trimmedName
-            }
+          const syncHint = data.pi_sync_status === "pending"
+            ? "\n(后台正在同步到门禁设备...)"
+            : "";
+          this.setData({
+            result: { success: true, message: `注册成功：${trimmedName}${syncHint}` },
           });
-          console.log("[register] 注册成功:", trimmedName);
+          console.log("[register] 注册成功:", trimmedName, "sync:", data.pi_sync_status);
         } else {
-          that.setData({
-            result: {
-              success: false,
-              message: data.message || data.detail || "注册失败，请重试"
-            }
+          this.setData({
+            result: { success: false, message: data.message || data.detail || "注册失败，请重试" },
           });
           console.warn("[register] 注册失败:", data.message);
         }
       },
-      fail: function (err) {
+      fail: (err) => {
         wx.hideLoading();
-        that.setData({ submitting: false });
-
+        this.setData({ submitting: false });
         console.error("[register] 上传失败:", err.errMsg);
 
-        var errMsg = err.errMsg || "";
-        var message = "网络错误，请检查 Windows 后台是否运行\n当前服务器：" + getBaseUrl();
+        const errMsg = err.errMsg || "";
+        let message = `网络错误，请检查 Windows 后台是否运行\n当前服务器：${getBaseUrl()}`;
 
         if (errMsg.indexOf("timeout") !== -1) {
           message = "上传超时，请检查网络连接";
@@ -360,181 +328,208 @@ Page({
           message = "请求域名未配置，请在开发者工具中关闭域名校验";
         }
 
-        that.setData({
-          result: { success: false, message: message }
-        });
-      }
+        this.setData({ result: { success: false, message } });
+      },
     });
   },
 
   /* ================================================================
-   * 重置 — 继续注册下一个人
+   * 重置
    * ================================================================ */
 
-  /**
-   * 清空表单，准备下一次注册
-   */
-  reset: function () {
+  reset() {
     this.setData({
       photoPath: "",
       name: "",
       nameValid: false,
       result: null,
-      submitting: false
+      submitting: false,
     });
   },
 
   /* ================================================================
-   * 服务器设置弹窗（v0.3.0 新增）
+   * 服务器设置弹窗
    * ================================================================ */
 
-  /**
-   * 打开设置弹窗 — 加载当前配置
-   */
-  showSettingsDialog: function () {
-    var saved = getSavedConfig();
+  showSettingsDialog() {
+    const saved = getSavedConfig();
     this.setData({
       showSettings: true,
       serverIp: (saved && saved.ip) || "192.168.1.5",
       serverPort: String((saved && saved.port) || 8000),
       testResult: null,
-      testing: false
+      testing: false,
+      recentServers: getRecentServers(),
     });
   },
 
-  /**
-   * 关闭设置弹窗
-   */
-  hideSettingsDialog: function () {
+  hideSettingsDialog() {
     this.setData({ showSettings: false, testResult: null });
   },
 
-  /**
-   * 阻止弹窗内容点击冒泡到遮罩层
-   */
-  stopPropagation: function () {
-    // 空函数，仅用于 catchtap 阻止冒泡
-  },
+  stopPropagation() { /* catchtap 阻止冒泡 */ },
+
+  onIpInput(e) { this.setData({ serverIp: e.detail.value, testResult: null }); },
+  onPortInput(e) { this.setData({ serverPort: e.detail.value, testResult: null }); },
 
   /**
-   * IP 输入事件
-   * @param {WechatMiniprogram.Input} e
+   * 保存服务器配置 — 规范化 + 写入本地存储
    */
-  onIpInput: function (e) {
-    this.setData({ serverIp: e.detail.value, testResult: null });
-  },
-
-  /**
-   * 端口输入事件
-   * @param {WechatMiniprogram.Input} e
-   */
-  onPortInput: function (e) {
-    this.setData({ serverPort: e.detail.value, testResult: null });
-  },
-
-  /**
-   * 保存服务器配置 — 写入本地存储 + 更新全局数据
-   */
-  saveServerConfig: function () {
-    var ip = this.data.serverIp.trim();
-    var portNum = parseInt(this.data.serverPort, 10);
-
-    // 验证 IP
-    if (!ip) {
-      wx.showToast({ title: "请输入服务器 IP 地址", icon: "none" });
-      return;
-    }
-    // 验证端口
-    if (!portNum || portNum < 1 || portNum > 65535) {
-      wx.showToast({ title: "端口范围 1 - 65535", icon: "none" });
+  saveServerConfig() {
+    const normalized = normalizeUrl(
+      `${this.data.serverIp}:${this.data.serverPort}`,
+      parseInt(this.data.serverPort, 10) || 8000
+    );
+    if (!normalized) {
+      wx.showToast({ title: "IP 或端口格式无效", icon: "none" });
       return;
     }
 
-    var baseUrl = "http://" + ip + ":" + portNum;
-    var config = {
-      baseUrl: baseUrl,
-      ip: ip,
-      port: portNum,
-      timeout: 10000
-    };
+    const config = { baseUrl: normalized.baseUrl, ip: normalized.ip, port: normalized.port, timeout: 10000 };
 
-    // 保存到本地存储
     wx.setStorageSync("server_config", config);
-
-    // 同步更新全局数据
     try {
-      var app = getApp();
-      if (app) {
-        app.globalData.serverConfig = config;
-      }
-    } catch (e) {}
+      const app = getApp();
+      if (app) app.globalData.serverConfig = config;
+    } catch (e) { /* ignore */ }
 
-    // 更新页面显示
+    // 添加到最近使用列表
+    addToRecent(config.baseUrl);
+
     this.setData({
       serverConfigured: true,
-      serverDisplay: ip + ":" + portNum,
+      serverDisplay: `${normalized.ip}:${normalized.port}`,
       showSettings: false,
-      testResult: null
+      testResult: null,
     });
 
     wx.showToast({ title: "服务器地址已保存", icon: "success" });
   },
 
   /**
-   * 测试服务器连接 — GET /api/config
+   * 测试连接 — HEAD /api/health
    */
-  testConnection: function () {
-    var that = this;
-    var ip = this.data.serverIp.trim();
-    var portNum = parseInt(this.data.serverPort, 10);
-
-    // 验证输入
-    if (!ip) {
-      wx.showToast({ title: "请输入服务器 IP 地址", icon: "none" });
-      return;
-    }
-    if (!portNum || portNum < 1 || portNum > 65535) {
-      wx.showToast({ title: "端口范围 1 - 65535", icon: "none" });
+  testConnection() {
+    const normalized = normalizeUrl(
+      `${this.data.serverIp}:${this.data.serverPort}`,
+      parseInt(this.data.serverPort, 10) || 8000
+    );
+    if (!normalized) {
+      wx.showToast({ title: "IP 或端口格式无效", icon: "none" });
       return;
     }
 
-    that.setData({ testing: true, testResult: null });
+    this.setData({ testing: true, testResult: null });
 
-    var testUrl = "http://" + ip + ":" + portNum + "/api/config";
+    const testUrl = `${normalized.baseUrl}/api/health`;
 
     wx.request({
       url: testUrl,
-      method: "GET",
+      method: "HEAD",
       timeout: 5000,
-      success: function (res) {
-        that.setData({ testing: false });
+      success: (res) => {
+        this.setData({ testing: false });
         if (res.statusCode === 200) {
-          that.setData({
+          this.setData({
             testResult: {
               success: true,
-              message: "连接成功！服务器运行中 (端口 " + portNum + ")"
-            }
+              message: `连接成功！服务器运行中 (端口 ${normalized.port})`,
+            },
           });
         } else {
-          that.setData({
+          this.setData({
             testResult: {
               success: false,
-              message: "服务器返回非预期状态码 (HTTP " + res.statusCode + ")"
-            }
+              message: `服务器返回非预期状态码 (HTTP ${res.statusCode})`,
+            },
           });
         }
       },
-      fail: function (err) {
-        that.setData({ testing: false });
-        var msg = "无法连接到 " + ip + ":" + portNum;
+      fail: (err) => {
+        this.setData({ testing: false });
+        let msg = `无法连接到 ${normalized.ip}:${normalized.port}`;
         if (err.errMsg && err.errMsg.indexOf("timeout") !== -1) {
           msg = "连接超时，请确认 IP 和端口正确，且 Windows 后台已启动";
         }
-        that.setData({
-          testResult: { success: false, message: msg }
+        this.setData({ testResult: { success: false, message: msg } });
+      },
+    });
+  },
+
+  /**
+   * 扫码配置 — 解析 QR 码中的服务器地址
+   */
+  scanQRCode() {
+    wx.scanCode({
+      scanType: ["qrCode"],
+      success: (res) => {
+        const normalized = normalizeUrl(res.result);
+        if (!normalized) {
+          wx.showToast({ title: "二维码内容不是有效的服务器地址", icon: "none" });
+          return;
+        }
+        this.setData({
+          serverIp: normalized.ip,
+          serverPort: String(normalized.port),
+          testResult: null,
+        });
+        wx.showToast({ title: `已识别: ${normalized.ip}:${normalized.port}`, icon: "success" });
+      },
+      fail: (err) => {
+        if (err.errMsg && err.errMsg.indexOf("cancel") === -1) {
+          console.warn("[register] scanCode 失败:", err.errMsg);
+        }
+      },
+    });
+  },
+
+  /**
+   * 从最近列表选择一个服务器
+   * @param {WechatMiniprogram.BaseEvent} e
+   */
+  selectRecentServer(e) {
+    const idx = e.currentTarget.dataset.index;
+    const list = getRecentServers();
+    if (idx >= 0 && idx < list.length) {
+      const normalized = normalizeUrl(list[idx].baseUrl);
+      if (normalized) {
+        this.setData({
+          serverIp: normalized.ip,
+          serverPort: String(normalized.port),
+          testResult: null,
         });
       }
-    });
-  }
+    }
+  },
 
+  /**
+   * 删除最近列表中的一条记录
+   * @param {WechatMiniprogram.BaseEvent} e
+   */
+  removeRecentServer(e) {
+    const idx = e.currentTarget.dataset.index;
+    const list = getRecentServers();
+    if (idx >= 0 && idx < list.length) {
+      list.splice(idx, 1);
+      saveRecentServers(list);
+      this.setData({ recentServers: list });
+    }
+  },
+
+  /**
+   * 清空全部最近记录（二次确认）
+   */
+  clearRecentServers() {
+    wx.showModal({
+      title: "确认清空",
+      content: "将清除所有已保存的服务器地址，此操作不可恢复。",
+      success: (res) => {
+        if (res.confirm) {
+          saveRecentServers([]);
+          this.setData({ recentServers: [] });
+          wx.showToast({ title: "已清空", icon: "success" });
+        }
+      },
+    });
+  },
 });

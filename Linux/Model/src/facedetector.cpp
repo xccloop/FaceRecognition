@@ -97,6 +97,10 @@ std::vector<FaceInfo> FaceDetector::detect(const cv::Mat& bgr,
         const float* bdp = (const float*)bboxes[level].data;
         const float* kdp = (const float*)kpss[level].data;
 
+        int fm_w = (img_w + stride - 1) / stride;
+        int fm_h = (img_h + stride - 1) / stride;
+        int N_spatial = fm_h * fm_w;
+
         for (int k = 0; k < N_total; k++, anchor_idx++) {
             float score = sdp[k];
             if (score < score_thresh) continue;
@@ -104,10 +108,13 @@ std::vector<FaceInfo> FaceDetector::detect(const cv::Mat& bgr,
             if (anchor_idx >= (int)anchors_.size()) break;
             const Anchor& a = anchors_[anchor_idx];
 
-            float bx = bdp[0 * N_total + k];
-            float by = bdp[1 * N_total + k];
-            float bw = bdp[2 * N_total + k];
-            float bh = bdp[3 * N_total + k];
+            int sub = k / N_spatial;
+            int pos = k % N_spatial;
+
+            float bx = bdp[(sub * 2 + 0) * N_total + pos];
+            float by = bdp[(sub * 2 + 0) * N_total + pos + N_spatial];
+            float bw = bdp[(sub * 2 + 1) * N_total + pos];
+            float bh = bdp[(sub * 2 + 1) * N_total + pos + N_spatial];
 
             float x1 = a.cx - bx * stride;
             float y1 = a.cy - by * stride;
@@ -125,8 +132,8 @@ std::vector<FaceInfo> FaceDetector::detect(const cv::Mat& bgr,
             f.score = score;
 
             for (int p = 0; p < 5; p++) {
-                f.keypoints[p][0] = a.cx + kdp[(p * 2 + 0) * N_total + k] * stride;
-                f.keypoints[p][1] = a.cy + kdp[(p * 2 + 1) * N_total + k] * stride;
+                f.keypoints[p][0] = a.cx + kdp[(sub * 5 + p) * N_total + pos] * stride;
+                f.keypoints[p][1] = a.cy + kdp[(sub * 5 + p) * N_total + pos + N_spatial] * stride;
             }
 
             faces.push_back(f);

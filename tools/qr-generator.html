@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>服务器配置二维码生成器 — FaceRecognition</title>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "Microsoft YaHei", sans-serif; background: #f0f2f5; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+  .card { background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.08); padding: 32px; width: 400px; max-width: 95vw; }
+  h2 { text-align: center; margin-bottom: 24px; color: #1a1a2e; }
+  label { display: block; font-size: 14px; color: #666; margin-bottom: 4px; }
+  input { width: 100%; padding: 10px 12px; border: 1px solid #d9d9d9; border-radius: 6px; font-size: 16px; margin-bottom: 12px; outline: none; transition: border-color .2s; }
+  input:focus { border-color: #4096ff; }
+  .row { display: flex; gap: 12px; }
+  .row > div { flex: 1; }
+  button { width: 100%; padding: 12px; background: #4096ff; color: #fff; border: none; border-radius: 6px; font-size: 16px; cursor: pointer; margin-top: 12px; transition: background .2s; }
+  button:hover { background: #1677ff; }
+  .qrcode-wrap { text-align: center; margin-top: 24px; display: none; }
+  .qrcode-wrap.show { display: block; }
+  #qrcode { display: inline-block; padding: 16px; background: #fff; border: 1px solid #eee; border-radius: 8px; }
+  .url-hint { margin-top: 12px; font-size: 13px; color: #999; font-family: monospace; word-break: break-all; }
+  .hint { font-size: 12px; color: #999; margin-top: -8px; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h2>服务器配置二维码</h2>
+  <div class="row">
+    <div><label for="ip">IP 地址</label><input id="ip" type="text" placeholder="192.168.1.5" value="192.168.1.5"></div>
+    <div><label for="port">端口</label><input id="port" type="number" placeholder="8000" value="8000"></div>
+  </div>
+  <p class="hint">仅支持 HTTP，小程序不支持自签名 HTTPS</p>
+  <button id="generate">生成二维码</button>
+  <div class="qrcode-wrap" id="result">
+    <div id="qrcode"></div>
+    <p class="url-hint" id="urlHint"></p>
+  </div>
+</div>
+<script>
+  document.getElementById('generate').addEventListener('click', () => {
+    const ip = document.getElementById('ip').value.trim();
+    const port = document.getElementById('port').value.trim();
+    if (!ip || !port) { alert('请输入 IP 和端口'); return; }
+    const url = 'http://' + ip + ':' + port;
+    const wrap = document.getElementById('result');
+    const qrEl = document.getElementById('qrcode');
+    qrEl.innerHTML = '';
+    new QRCode(qrEl, { text: url, width: 200, height: 200, colorDark: '#000', colorLight: '#fff' });
+    document.getElementById('urlHint').textContent = url;
+    wrap.classList.add('show');
+  });
+</script>
+</body>
+</html>

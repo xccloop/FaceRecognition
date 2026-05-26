@@ -69,6 +69,8 @@ interface RecentUser {
 }
 
 const userCount = ref(0);
+const syncFailed = ref(0);
+const syncPending = ref(0);
 const piOnline = ref(false);
 const cameraFps = ref(0);
 const recentUsers = ref<RecentUser[]>([]);
@@ -82,12 +84,20 @@ const statCards = computed(() => [
     valueClass: "stat-highlight",
   },
   {
-    icon: "📷",
+    icon: "🍓",
     value: piOnline.value ? "在线" : "离线",
-    label: "摄像头",
+    label: "树莓派",
     isNumber: false,
     statusClass: piOnline.value ? "online" : "offline",
     valueClass: "",
+  },
+  {
+    icon: "📡",
+    value: syncFailed.value > 0 ? "异常" : "正常",
+    label: "Pi 同步",
+    isNumber: false,
+    statusClass: syncFailed.value > 0 ? "offline" : "online",
+    valueClass: syncFailed.value > 0 ? "stat-danger" : "stat-ok",
   },
   {
     icon: "🔵",
@@ -104,6 +114,8 @@ onMounted(async () => {
     const res = await getDashboard();
     const data = res.data;
     userCount.value = data.user_count || 0;
+    syncFailed.value = data.sync_failed || 0;
+    syncPending.value = data.sync_pending || 0;
     piOnline.value = data.pi_online || false;
     cameraFps.value = data.camera_fps || 0;
     recentUsers.value = data.recent_users || [];
@@ -133,9 +145,16 @@ onMounted(async () => {
 
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 16px;
   margin-bottom: 32px;
+}
+
+.stat-danger {
+  color: var(--danger);
+}
+.stat-ok {
+  color: var(--success);
 }
 
 .stat-card {

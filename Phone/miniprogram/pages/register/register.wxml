@@ -147,6 +147,11 @@
 
         <!-- 操作按钮 -->
         <view class="settings-actions">
+          <button class="settings-btn scan-btn" bindtap="scanQRCode">
+            扫码配置
+          </button>
+        </view>
+        <view class="settings-actions">
           <button
             class="settings-btn test-btn"
             bindtap="testConnection"
@@ -161,6 +166,24 @@
           >
             保存
           </button>
+        </view>
+
+        <!-- 最近使用的服务器 -->
+        <view wx:if="{{recentServers.length}}" class="recent-section">
+          <view class="recent-header">
+            <text class="recent-title">最近使用</text>
+            <text class="recent-clear" bindtap="clearRecentServers">清空</text>
+          </view>
+          <view
+            wx:for="{{recentServers}}"
+            wx:key="baseUrl"
+            class="recent-item"
+            data-index="{{index}}"
+            bindtap="selectRecentServer"
+          >
+            <text class="recent-url">{{item.baseUrl}}</text>
+            <text class="recent-delete" data-index="{{index}}" catchtap="removeRecentServer">✕</text>
+          </view>
         </view>
       </view>
     </view>

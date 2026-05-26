@@ -268,8 +268,8 @@ static int cmdLive(FaceDetector& detector, FeatureExtractor& extractor, FeatureD
         return 1;
     }
 
-    cap.set(cv::CAP_PROP_FRAME_WIDTH, 640);
-    cap.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
+    cap.set(cv::CAP_PROP_FRAME_WIDTH, 320);
+    cap.set(cv::CAP_PROP_FRAME_HEIGHT, 240);
 
     cv::Mat frame;
     cap >> frame;

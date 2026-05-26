@@ -11,7 +11,7 @@ extern volatile uint32_t g_idle_count;
 /* -------- 全局句柄 -------- */
 static TaskHandle_t  xUartRxTaskHandle = NULL;
 static TimerHandle_t xHeartbeatTimer   = NULL;
-static TimerHandle_t xWatchdogTimer    = NULL;
+static TimerHandle_t xFrameTimeoutTimer = NULL;
 static uart_dma_handle_t *hUart = NULL;
 
 /* DMA ringbuffer，大小必须是 2 的幂 */
@@ -24,7 +24,12 @@ TickType_t xLastFrameTicks = 0;
 uint8_t serial_heartbeat_timeout_sent = 0;
 uint8_t serial_heartbeat_restored     = 0;
 
-/* -------- LED 初始化 -------- */
+/* -------- LED -------- */
+#define LED_ERR_PORT  GPIOB
+#define LED_ERR_PIN   GPIO_Pin_5
+#define LED_OK_PORT   GPIOE
+#define LED_OK_PIN    GPIO_Pin_5
+
 static void LED_Init(void)
 {
     GPIO_InitTypeDef g;
@@ -32,8 +37,34 @@ static void LED_Init(void)
     g.GPIO_Mode  = GPIO_Mode_Out_PP;
     g.GPIO_Speed = GPIO_Speed_50MHz;
     g.GPIO_Pin   = GPIO_Pin_5;
-    GPIO_Init(GPIOB, &g);  GPIO_SetBits(GPIOB, GPIO_Pin_5);
+    GPIO_Init(GPIOB, &g);  GPIO_SetBits(GPIOB, GPIO_Pin_5);  /* 灭 (高电平) */
     GPIO_Init(GPIOE, &g);  GPIO_SetBits(GPIOE, GPIO_Pin_5);
+}
+
+/* 启动闪烁: 两灯同时亮灭 N 次，每次 ~150ms */
+static void LED_StartupFlash(int times)
+{
+    int i;
+    for (i = 0; i < times; i++) {
+        GPIO_ResetBits(LED_ERR_PORT, LED_ERR_PIN);
+        GPIO_ResetBits(LED_OK_PORT,  LED_OK_PIN);
+        vTaskDelay(pdMS_TO_TICKS(150));
+        GPIO_SetBits(LED_ERR_PORT, LED_ERR_PIN);
+        GPIO_SetBits(LED_OK_PORT,  LED_OK_PIN);
+        vTaskDelay(pdMS_TO_TICKS(150));
+    }
+}
+
+/* 帧错误快闪: PB5 短促闪烁 N 次 */
+static void LED_ErrorFlash(int times)
+{
+    int i;
+    for (i = 0; i < times; i++) {
+        GPIO_ResetBits(LED_ERR_PORT, LED_ERR_PIN);
+        vTaskDelay(pdMS_TO_TICKS(80));
+        GPIO_SetBits(LED_ERR_PORT, LED_ERR_PIN);
+        vTaskDelay(pdMS_TO_TICKS(80));
+    }
 }
 
 /* -------- 调试文本输出（裸字符串，不走帧协议） -------- */
@@ -65,7 +96,7 @@ static void uart_direct_tx(const char *s)
 void uart_send_frame(uint8_t cmd, uint8_t dir,
                      const uint8_t *data, uint16_t data_len)
 {
-    uint8_t  buf[7 + 2 * MAX_DATA_LEN];
+    uint8_t  buf[MAX_COBS_LEN];
     uint16_t total = frame_encode(cmd, dir, data, data_len, buf, sizeof(buf));
     if (total && hUart) uart_dma_send(hUart, buf, total);
 }
@@ -79,15 +110,20 @@ static void vHeartbeatTimerCallback(TimerHandle_t xTimer)
             uart_send_text_line("[ERROR] HEARTBEAT TIMEOUT (>15s) - Pi may be offline!");
             serial_heartbeat_timeout_sent = 1;
             serial_heartbeat_restored     = 0;
+
+            /* 三重恢复: 复位解析器 + 清空缓冲 + 亮错误灯 */
+            frame_parser_reset();
+            uart_dma_rx_flush(hUart);
+            GPIO_ResetBits(LED_ERR_PORT, LED_ERR_PIN);  /* PB5 常亮 */
         }
     }
 }
 
-/* -------- 看门狗喂狗（500ms 定时器） -------- */
-static void vWatchdogTimerCallback(TimerHandle_t xTimer)
+/* -------- 帧解析字节间超时检查（5ms 定时器） -------- */
+static void vFrameTimeoutTimerCallback(TimerHandle_t xTimer)
 {
     (void)xTimer;
-    IWDG_ReloadCounter();
+    frame_parser_check_timeout(xTaskGetTickCount());
 }
 
 /* -------- IWDG 初始化（~2s 溢出，1250 × 64 / 40kHz） -------- */
@@ -104,7 +140,7 @@ static void IWDG_Init(void)
 
 /* -------- UART RX 任务 --------
    轮询 DMA ringbuffer → 逐字节喂帧解析器 → 完整帧交给 cmd_handler。
-   无数据时 5 秒超时打印存活诊断，不用永久阻塞方便调试。 */
+   喂狗在此任务的循环尾部执行——此任务卡死=系统真死, 狗应该咬。 */
 static void vUartRxTask(void *pvParameters)
 {
     uart_direct_tx("[RX] START\r\n");
@@ -164,14 +200,23 @@ static void vUartRxTask(void *pvParameters)
             }
         }
 
-        /* 逐字节吐出 ringbuffer，喂帧解析器 */
+        /* 逐字节吐出 ringbuffer，喂帧解析器（字节间超时由 5ms 定时器独立处理） */
         while (uart_dma_rx_available(hUart)) {
             uint8_t ch;
             ParsedFrame_t frame;
             uart_dma_recv(hUart, &ch, 1);
-            if (frame_parser_feed(ch, &frame))
+            if (frame_parser_feed(ch, xTaskGetTickCount(), &frame)) {
                 dispatch_frame(&frame);
+            }
         }
+
+        /* 帧解码/校验错误 → PB5 快闪 3 下 */
+        if (frame_parser_had_error()) {
+            LED_ErrorFlash(3);
+        }
+
+        /* ── 喂狗: 此任务循环走完 = 核心路径正常 ── */
+        IWDG_ReloadCounter();
     }
 }
 
@@ -212,6 +257,23 @@ int main(void)
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
     LED_Init();
 
+    /* 启动闪烁: 两灯同时亮灭 2 次，表示上电初始化 */
+    {
+        int i;
+        for (i = 0; i < 2; i++) {
+            GPIO_ResetBits(LED_ERR_PORT, LED_ERR_PIN);
+            GPIO_ResetBits(LED_OK_PORT,  LED_OK_PIN);
+            {
+                volatile uint32_t d = 600000; while (d--) __NOP();
+            }
+            GPIO_SetBits(LED_ERR_PORT, LED_ERR_PIN);
+            GPIO_SetBits(LED_OK_PORT,  LED_OK_PIN);
+            {
+                volatile uint32_t d = 600000; while (d--) __NOP();
+            }
+        }
+    }
+
     /* 打开 DMA-UART */
     hUart = uart_dma_open(UART_PORT1, 115200,
                           uart_tx_rb_buf, sizeof(uart_tx_rb_buf),
@@ -240,10 +302,10 @@ int main(void)
     configASSERT(xHeartbeatTimer);
     xTimerStart(xHeartbeatTimer, 0);
 
-    /* 500ms 喂狗定时器 */
-    xWatchdogTimer = xTimerCreate("WdgFeed", pdMS_TO_TICKS(500), pdTRUE, NULL, vWatchdogTimerCallback);
-    configASSERT(xWatchdogTimer);
-    xTimerStart(xWatchdogTimer, 0);
+    /* 5ms 帧解析超时定时器 */
+    xFrameTimeoutTimer = xTimerCreate("FrameTO", pdMS_TO_TICKS(5), pdTRUE, NULL, vFrameTimeoutTimerCallback);
+    configASSERT(xFrameTimeoutTimer);
+    xTimerStart(xFrameTimeoutTimer, 0);
 
     IWDG_Init();
 

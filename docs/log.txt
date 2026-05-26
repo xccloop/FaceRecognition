@@ -1,0 +1,45 @@
+(base) PS D:\FaceRecognition> python tools/stm32_serial_test.py --port COM4 --cmd heartbeat
+[Serial] Connected: COM4 @ 115200
+[TX] 7 bytes: 03 1F 01 01 01 DE 00
+[RX-text] [RX: 7 bytes]
+ HB[OK] HEARTBEAT received
+[RX-hex] 51 bytes: 0D 0A 5B 52 58 3A 20 37 20 62 79 74 65 73 5D 0D 0A 03 20 02 04 02 48 42 13 00 5B 4F 4B 5D 20 48 45 41 52 54 42 45 41 54 20 72 65 63 65 69 76 65 64 0D 0A
+[Serial] Closed
+(base) PS D:\FaceRecognition> python tools/stm32_serial_test.py --port COM4 --cmd identify
+[Serial] Connected: COM4 @ 115200
+[TX] 7 bytes: 03 10 01 01 01 0C 00
+[RX-text] [RX: 7 bytes]
+[OK] HEARTBEAT RESTORED - Pi back online
+[OK] IDENTIFY: face recognized!
+
+[RX-hex] 99 bytes: 0D 0A 5B 52 58 3A 20 37 20 62 79 74 65 73 5D 0D 0A 5B 4F 4B 5D 20 48 45 41 52 54 42 45 41 54 20 52 45 53 54 4F 52 45 44 20 2D 20 50 69 20 62 61 63 6B 20 6F 6E 6C 69 6E 65 0D 0A 5B 4F 4B 5D 20 49 44 45 4E 54 49 46 59 3A 20 66 61 63 65 20 72 65 63 6F 67 6E 69 7A 65 64 21 0D 0A 03 20 02 01 01 18 00
+[Serial] Closed
+(base) PS D:\FaceRecognition> python tools/stm32_serial_test.py --port COM4 --cmd corrupt-crc
+[Serial] Connected: COM4 @ 115200
+[TX] 7 bytes: 03 1F 01 01 01 21 00
+[RX-text] [RX: 7 bytes]
+[RX-hex] 17 bytes: 0D 0A 5B 52 58 3A 20 37 20 62 79 74 65 73 5D 0D 0A
+[Serial] Closed
+(base) PS D:\FaceRecognition> python tools/stm32_serial_test.py --port COM4 --cmd mismatch-len
+[Serial] Connected: COM4 @ 115200
+[TX] 10 bytes: 03 1F 01 05 0A 01 02 03 D7 00
+[RX-text] [RX: 10 bytes]
+[RX-hex] 18 bytes: 0D 0A 5B 52 58 3A 20 31 30 20 62 79 74 65 73 5D 0D 0A
+[Serial] Closed
+(base) PS D:\FaceRecognition> python tools/stm32_serial_test.py --port COM4 --cmd over-max
+[Serial] Connected: COM4 @ 115200
+[TX] 71 bytes: 04 1F 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 01 94 00
+[RX-text] [RX: 71 bytes]
+[RX-hex] 18 bytes: 0D 0A 5B 52 58 3A 20 37 31 20 62 79 74 65 73 5D 0D 0A
+[Serial] Closed
+(base) PS D:\FaceRecognition> python tools/stm32_serial_test.py --port COM4 --cmd gap-timeout
+[Serial] Connected: COM4 @ 115200
+[TX-gap] Part1 3 bytes: 03 1F 01
+[TX-gap] --- sleeping 6ms ---
+[TX-gap] Part2 4 bytes: 01 01 DE 00
+[RX-text] [RX: 3 bytes]
+[OK] HEARTBEAT RESTORED - Pi back online
+ HB[OK] HEARTBEAT received
+[RX-hex] 93 bytes: 0D 0A 5B 52 58 3A 20 33 20 62 79 74 65 73 5D 0D 0A 5B 4F 4B 5D 20 48 45 41 52 54 42 45 41 54 20 52 45 53 54 4F 52 45 44 20 2D 20 50 69 20 62 61 63 6B 20 6F 6E 6C 69 6E 65 0D 0A 03 20 02 04 02 48 42 13 00 5B 4F 4B 5D 20 48 45 41 52 54 42 45 41 54 20 72 65 63 65 69 76 65 64 0D 0A
+[Serial] Closed
+(base) PS D:\FaceRecognition>
