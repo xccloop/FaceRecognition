@@ -1,6 +1,6 @@
 /**
  * uart_dma.h — DMA-UART driver (TX chained DMA + RX circular IDLE)
- * ARMCC v5 兼容：includes uart_port.h 提供 stm32f10x.h + bool
+ * ARMCC v5 compatible: includes uart_port.h providing stm32f10x.h + bool
  */
 #ifndef UART_DMA_H
 #define UART_DMA_H
@@ -21,5 +21,9 @@ bool      uart_dma_tx_flush(uart_dma_handle_t *h, uint32_t timeout);
 void      uart_dma_rx_flush(uart_dma_handle_t *h);
 bool      uart_dma_tx_busy(uart_dma_handle_t *h);
 void      uart_dma_set_rx_task(uart_dma_handle_t *h, void *task);
+
+/* Diagnostics: error counters for long-run observability */
+uint32_t  uart_dma_error_count(uart_dma_handle_t *h);
+uint32_t  uart_dma_error_restarts(uart_dma_handle_t *h);
 
 #endif

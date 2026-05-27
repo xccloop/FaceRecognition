@@ -13,6 +13,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <mutex>
 #include <numeric>
 #include <stdexcept>
 #include <string>
@@ -27,6 +28,7 @@ using Clock = std::chrono::steady_clock;
 class FeatureDB {
 public:
     void save(const std::string& name, const std::vector<float>& feat) {
+        std::lock_guard<std::mutex> lock(mtx_);
         fs::create_directories("features");
         std::ofstream ofs("features/" + name + ".bin", std::ios::binary);
         if (!ofs) throw std::runtime_error("Cannot write features/" + name + ".bin");
@@ -36,10 +38,12 @@ public:
     }
 
     bool has(const std::string& name) const {
+        std::lock_guard<std::mutex> lock(mtx_);
         return fs::exists("features/" + name + ".bin");
     }
 
     void load() {
+        std::lock_guard<std::mutex> lock(mtx_);
         registry_.clear();
         if (!fs::exists("features")) return;
         for (const auto& entry : fs::directory_iterator("features")) {
@@ -55,6 +59,7 @@ public:
     struct Match { std::string name; float confidence; };
 
     Match identify(const std::vector<float>& feat, float threshold = 0.4f) const {
+        std::lock_guard<std::mutex> lock(mtx_);
         Match best{"", -2.f};
         for (const auto& e : registry_) {
             float sim = cosineSimilarity(feat, e.feature);
@@ -64,8 +69,8 @@ public:
         return best;
     }
 
-    // Return all registrants sorted by similarity (highest first)
     std::vector<Match> compareAll(const std::vector<float>& feat) const {
+        std::lock_guard<std::mutex> lock(mtx_);
         std::vector<Match> results;
         results.reserve(registry_.size());
         for (const auto& e : registry_) {
@@ -76,14 +81,27 @@ public:
         return results;
     }
 
-    bool empty() const { return registry_.empty(); }
-    size_t size() const { return registry_.size(); }
-    const std::vector<float>& feature(size_t idx) const { return registry_[idx].feature; }
-    const std::string& name(size_t idx) const { return registry_[idx].name; }
+    bool empty() const {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return registry_.empty();
+    }
+    size_t size() const {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return registry_.size();
+    }
+    const std::vector<float>& feature(size_t idx) const {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return registry_[idx].feature;
+    }
+    const std::string& name(size_t idx) const {
+        std::lock_guard<std::mutex> lock(mtx_);
+        return registry_[idx].name;
+    }
 
 private:
     struct Entry { std::string name; std::vector<float> feature; };
     std::vector<Entry> registry_;
+    mutable std::mutex mtx_;
 
     static std::vector<float> loadOne(const std::string& path) {
         std::ifstream ifs(path, std::ios::binary);
