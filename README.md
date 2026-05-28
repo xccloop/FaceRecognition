@@ -75,25 +75,27 @@
 
 | | |
 |---|---|
-| **任务** | ① 接收注册请求, 提取+存储人脸特征 ② 摄像头实时检测→识别→UART 控制门锁 |
-| **推理框架** | **ncnn** (腾讯开源, ARM NEON 优化, 无 GPU 依赖) |
-| **AI 模型** | SCRFD `det_500m` (人脸检测) + MobileFaceNet `w600k_mbf` (512维特征提取) |
-| **注册 API** | Flask :5000, C++ facerec 子进程 (或 ONNX 引擎备选) |
-| **运行时** | Python 多线程: Capture → Inference → UART Control → UART Monitor |
-| **视频流** | MJPEG Flask :8080, `multipart/x-mixed-replace` |
+| **任务** | ① 接收注册请求, 提取+存储人脸特征 ② 摄像头实时检测→识别→UART 控制门锁 ③ MJPEG 视频流回传 |
+| **推理框架** | **ncnn** (腾讯开源, ARM NEON 优化, 2 线程, 无 GPU 依赖) |
+| **AI 模型** | SCRFD `det_500m_dyn` (人脸检测) + MobileFaceNet `w600k_mbf_opt` (512维特征提取) |
+| **运行时** | **单进程 C++**：采集 → ncnn 推理 → UART 帧收发 → MJPEG 推流 (全部内置) |
+| **注册 API** | Flask :5000 (`pi_server.py`), ONNX 引擎提取特征 → features/*.bin |
+| **特征库** | `features/*.bin`, C++ 进程每 5s 自动热加载, std::mutex 保护并发读写 |
+| **视频流** | **内建 HTTP MJPEG** (raw socket + TCP_NODELAY), 内存直传无文件 I/O, :8080/video |
+| **进程管理** | systemd `face-recognition.service`, 崩溃自动重启, 开机自启 |
+| **硬件** | 5V 风扇 + 散热片, CPU 稳定 43°C (满载 ~190%) |
 
 **C++ 推理管道 (`Linux/Model/src/`)：**
 - `facedetector.cpp` — SCRFD 检测器, max-side 缩放, pad 32 对齐, 向量化解码, NMS
 - `facealigner.cpp` — ArcFace 5 点仿射对齐 → 112×112 正脸
 - `featureextractor.cpp` — MobileFaceNet 512 维特征 + L2 归一化
-- `main.cpp` — CLI (`register/identify/compare/live`) + FeatureDB 内存特征库
+- `uart_protocol.cpp` — COBS+CRC8 帧编解码 + 逐字节状态机 (与 STM32 协议一致)
+- `main.cpp` — 生产模式 `facerec run`: 采集→检测→跟踪→识别→UART+MJPEG 全管线
 
-**Python 运行时 (`Linux/Raspberry Pi/src/`)：**
-- `inference.py` — 推理线程: 跳帧优化, IOU 跟踪, 连续 N 帧确认去抖
-- `camera.py` — FrameQueue (容量 1, pop 阻塞), ResultQueue (FIFO, 满时丢旧)
-- `feature_db.py` — 特征 CRUD + inotify 热加载 (运行时增删人员自动生效)
-- `uart.py` — COBS+CRC8 帧协议 + 非阻塞串口收发线程
-- `recognition.py` — ONNX Runtime 推理引擎 (C++ 未编译时的备选, .bin 完全兼容)
+**Python 辅助 (`Linux/Raspberry Pi/src/`)：**
+- `pi_server.py` — Flask 注册 API (:5000), 接收 Windows 端照片, ONNX 提取特征存 .bin
+- `uart.py` — COBS+CRC8 帧协议 Python 实现 (测试/模拟用)
+- `uart_simulator.py` (tools/) — 交互式串口测试工具, 手动发帧验证 STM32 响应
 
 ### STM32F103 — 门锁终端
 
@@ -183,20 +185,31 @@ build_exe.bat                     # → dist/FaceRecognition.exe (~30MB)
 ### 树莓派
 
 ```bash
-# 编译 C++ 推理引擎
-cd Linux/Model && mkdir build && cd build
-cmake .. -DNCNN_DIR=/path/to/ncnn -DOpenCV_DIR=/path/to/opencv
-make -j4                          # → build/facerec
+# 1. 编译 C++ 推理引擎（首次部署）
+cd ~/Desktop/FaceRec/Model/build
+cmake -DNCNN_DIR=/usr/local ..
+make -j2
 
-# 启动注册 API
-cd Linux/Model
-python pi_server.py --port 5000
+# 2. 启动全部服务（推理 + UART + MJPEG 内建）
+cd ~/Desktop/FaceRec
+./User/start.sh
 
-# 启动识别运行时
-cd Linux/Raspberry\ Pi
-python main.py                    # 完整模式 (摄像头 + 推理 + UART + MJPEG)
-python main.py --no-uart          # 调试模式 (仅推理 + 视频)
+# 3. 或使用 systemd 服务（开机自启）
+sudo systemctl start face-recognition
+journalctl -u face-recognition -f    # 实时日志
+
+# 4. 启动注册 API（接收 Windows 端同步）
+cd ~/Desktop/FaceRec/Model
+nohup python3 pi_server.py --port 5000 > /tmp/pi_server.log 2>&1 &
 ```
+
+**日志格式**：
+```
+[Run] #510 fps=30 detect=30ms cpu=43C 190% tracks=1 uart=IDENTIFY:张三
+```
+| fps | detect | cpu | tracks | uart |
+|-----|--------|-----|--------|------|
+| 实时帧率 | 检测耗时 | 温度 + CPU占用 | 跟踪人脸数 | 发送的UART命令 |
 
 ### STM32 固件
 
@@ -234,18 +247,19 @@ FaceRecognition/
 │   ├── photos/                     # 用户照片存储
 │   └── dist/                       # PyInstaller 打包输出
 ├── Linux/                          # 树莓派
-│   ├── Model/                      # C++ ncnn 推理核心
-│   │   ├── src/                    # facedetector, facealigner, featureextractor, main
-│   │   ├── models/ncnn_models/     # SCRFD + MobileFaceNet (ncnn 格式)
+│   ├── Model/                      # C++ ncnn 推理核心 (部署: ~/Desktop/FaceRec/Model)
+│   │   ├── src/                    # facedetector, facealigner, featureextractor, uart_protocol, main
+│   │   ├── inc/                    # C++ 头文件
+│   │   ├── models/ncnn_models/     # SCRFD + MobileFaceNet (ncnn .param/.bin)
 │   │   ├── pi_server.py            # Flask 注册 API (:5000)
+│   │   ├── mjpeg_stream.py         # MJPEG 推流 (已内建到 C++, 备用)
 │   │   └── features/               # 人脸特征 .bin 存储
-│   └── Raspberry Pi/src/           # Python 运行时
-│       ├── camera.py               # 采集 + FrameQueue/ResultQueue
-│       ├── recognition.py          # ONNX 推理引擎 (备选)
-│       ├── inference.py            # 推理线程 (跳帧/IOU 跟踪/确认)
-│       ├── feature_db.py           # 特征库 CRUD + 热加载
-│       ├── uart.py                 # COBS+CRC8 帧协议 + 串口
-│       └── mjpeg.py                # MJPEG 视频流 (:8080)
+│   ├── Raspberry Pi/src/           # Python 辅助 (ONNX 备选 + 测试)
+│   ├── Tools/                      # 启动脚本 + 测试工具
+│   │   ├── start.sh                # User/start.sh — 一键启动
+│   │   ├── uart_simulator.py       # 串口模拟器 (交互式测试)
+│   │   └── mjpeg_start.sh          # MJPEG 独立启动 (备用)
+│   └── doc/                        # 部署文档 + 故障排查
 ├── Stm32/                          # STM32 固件
 │   ├── User/main.c                 # FreeRTOS 入口
 │   ├── Comms/                      # DMA UART + RingBuffer
@@ -264,9 +278,11 @@ FaceRecognition/
 | 模块 | 状态 |
 |------|------|
 | 手机小程序 | 完成 |
-| Windows 后台 | 完成 (v1.2.0, PyInstaller EXE) |
+| Windows 后台 | 完成 (v1.2.0, PyInstaller EXE ~34MB) |
+| Pi C++ ncnn 推理 | 完成 (ARM aarch64 编译, 集成 UART + MJPEG) |
 | Pi 注册 API | 完成 (Flask :5000) |
-| Pi 实时识别 | 代码就绪 (待摄像头+STM32 硬件联调) |
-| C++ ncnn 引擎 | 代码完成 (待 Pi cmake 编译) |
-| STM32 固件 | 完成 (FreeRTOS + DMA UART + COBS/CRC8 + TFTLCD + SPI Flash 字库) |
+| Pi 实时识别 | 完成 (摄像头 + ncnn + UART + STM32 联调通过) |
+| Pi systemd 服务 | 完成 (开机自启, 崩溃自动重启) |
+| STM32 固件 | 完成 (FreeRTOS + DMA UART + COBS/CRC8 + TFTLCD + IWDG) |
+| Pi↔STM32 通信 | 完成 (IDENTIFY/UNKNOWN/NOFACE/MULTIFACE/HEARTBEAT/ACK 全部验证) |
 | 协议测试 | 完成 (45 个 pytest, 全部通过) |

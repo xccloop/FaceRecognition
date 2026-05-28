@@ -5,8 +5,10 @@
 #include "uart_dma.h"
 #include "frame_protocol.h"
 #include "cmd_handler.h"
-
-extern volatile uint32_t g_idle_count;
+#include "../BSP/LCD/display.h"
+#include "../BSP/NORFLASH/norflash.h"
+#include "../Middlewares/TEXT/fonts.h"
+#include "../BSP/LED/led.h"
 
 /* -------- 全局句柄 -------- */
 static TaskHandle_t  xUartRxTaskHandle = NULL;
@@ -23,49 +25,8 @@ TickType_t xLastFrameTicks = 0;
 /* 诊断输出防重复标志（cmd_handler 共享） */
 uint8_t serial_heartbeat_timeout_sent = 0;
 uint8_t serial_heartbeat_restored     = 0;
+uint8_t serial_has_received_frame     = 0;  /* 是否曾收到过 Pi 的帧 */
 
-/* -------- LED -------- */
-#define LED_ERR_PORT  GPIOB
-#define LED_ERR_PIN   GPIO_Pin_5
-#define LED_OK_PORT   GPIOE
-#define LED_OK_PIN    GPIO_Pin_5
-
-static void LED_Init(void)
-{
-    GPIO_InitTypeDef g;
-    RCC_APB2PeriphClockCmd(RCC_APB2Periph_GPIOB | RCC_APB2Periph_GPIOE, ENABLE);
-    g.GPIO_Mode  = GPIO_Mode_Out_PP;
-    g.GPIO_Speed = GPIO_Speed_50MHz;
-    g.GPIO_Pin   = GPIO_Pin_5;
-    GPIO_Init(GPIOB, &g);  GPIO_SetBits(GPIOB, GPIO_Pin_5);  /* 灭 (高电平) */
-    GPIO_Init(GPIOE, &g);  GPIO_SetBits(GPIOE, GPIO_Pin_5);
-}
-
-/* 启动闪烁: 两灯同时亮灭 N 次，每次 ~150ms */
-static void LED_StartupFlash(int times)
-{
-    int i;
-    for (i = 0; i < times; i++) {
-        GPIO_ResetBits(LED_ERR_PORT, LED_ERR_PIN);
-        GPIO_ResetBits(LED_OK_PORT,  LED_OK_PIN);
-        vTaskDelay(pdMS_TO_TICKS(150));
-        GPIO_SetBits(LED_ERR_PORT, LED_ERR_PIN);
-        GPIO_SetBits(LED_OK_PORT,  LED_OK_PIN);
-        vTaskDelay(pdMS_TO_TICKS(150));
-    }
-}
-
-/* 帧错误快闪: PB5 短促闪烁 N 次 */
-static void LED_ErrorFlash(int times)
-{
-    int i;
-    for (i = 0; i < times; i++) {
-        GPIO_ResetBits(LED_ERR_PORT, LED_ERR_PIN);
-        vTaskDelay(pdMS_TO_TICKS(80));
-        GPIO_SetBits(LED_ERR_PORT, LED_ERR_PIN);
-        vTaskDelay(pdMS_TO_TICKS(80));
-    }
-}
 
 /* -------- 调试文本输出（裸字符串，不走帧协议） -------- */
 static void uart_send_text(const char *msg)
@@ -82,16 +43,6 @@ void uart_send_text_line(const char *msg)
     uart_send_text("\r\n");
 }
 
-/* 直接写 USART 寄存器，完全绕过 DMA/RTOS。
-   用于确认任务入口和启动阶段的硬件状态。 */
-static void uart_direct_tx(const char *s)
-{
-    while (*s) {
-        while (!(USART1->SR & USART_SR_TXE));
-        USART1->DR = *s++;
-    }
-}
-
 /* cmd_handler.c 调用此函数发送二进制帧 */
 void uart_send_frame(uint8_t cmd, uint8_t dir,
                      const uint8_t *data, uint16_t data_len)
@@ -105,16 +56,26 @@ void uart_send_frame(uint8_t cmd, uint8_t dir,
 static void vHeartbeatTimerCallback(TimerHandle_t xTimer)
 {
     (void)xTimer;
-    if ((xTaskGetTickCount() - xLastFrameTicks) * portTICK_PERIOD_MS > 15000) {
-        if (!serial_heartbeat_timeout_sent) {
-            uart_send_text_line("[ERROR] HEARTBEAT TIMEOUT (>15s) - Pi may be offline!");
+
+    /* 启动闪烁: 调度器启动后第 1 个 tick 执行 */
+    {
+        static uint8_t boot_done = 0;
+        if (!boot_done) { boot_done = 1; led_boot_flash(); }
+    }
+
+    /* 超时 LED 闪烁驱动 */
+    led_timeout_tick();
+
+    if ((xTaskGetTickCount() - xLastFrameTicks) * portTICK_PERIOD_MS > 60000) {
+        if (!serial_heartbeat_timeout_sent && serial_has_received_frame) {
             serial_heartbeat_timeout_sent = 1;
             serial_heartbeat_restored     = 0;
 
-            /* 三重恢复: 复位解析器 + 清空缓冲 + 亮错误灯 */
             frame_parser_reset();
             uart_dma_rx_flush(hUart);
-            GPIO_ResetBits(LED_ERR_PORT, LED_ERR_PIN);  /* PB5 常亮 */
+
+            display_show_failure(REASON_TIMEOUT);
+            led_timeout_start();
         }
     }
 }
@@ -132,8 +93,8 @@ static void IWDG_Init(void)
     RCC_LSICmd(ENABLE);
     while (!RCC_GetFlagStatus(RCC_FLAG_LSIRDY));
     IWDG_WriteAccessCmd(IWDG_WriteAccess_Enable);
-    IWDG_SetPrescaler(IWDG_Prescaler_64);
-    IWDG_SetReload(1250);
+    IWDG_SetPrescaler(IWDG_Prescaler_256);
+    IWDG_SetReload(625);   /* 40kHz / 256 * 625 = 4s */
     IWDG_ReloadCounter();
     IWDG_Enable();
 }
@@ -143,7 +104,6 @@ static void IWDG_Init(void)
    喂狗在此任务的循环尾部执行——此任务卡死=系统真死, 狗应该咬。 */
 static void vUartRxTask(void *pvParameters)
 {
-    uart_direct_tx("[RX] START\r\n");
     (void)pvParameters;
 
     frame_parser_reset();
@@ -154,51 +114,12 @@ static void vUartRxTask(void *pvParameters)
         uint16_t avail;
         avail = uart_dma_rx_available(hUart);
 
-        /* 等待数据，5 秒超时打印存活诊断 */
+        /* 等待数据，500ms 超时喂狗 */
         if (avail == 0) {
-            uint32_t notify = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(5000));
-            if (notify == 0) {
-                uint32_t idle  = g_idle_count;
-                uint32_t cndtr = uart_port_rx_dma_remaining(UART_PORT1);
-                char buf[48];
-                int i = 0;
-                char *p = "[DIAG] alive idle=";
-                while (*p) buf[i++] = *p++;
-                if (idle >= 100)  buf[i++] = '0' + (idle / 100);
-                if (idle >= 10)   buf[i++] = '0' + ((idle / 10) % 10);
-                buf[i++] = '0' + (idle % 10);
-                p = " cndtr=";
-                while (*p) buf[i++] = *p++;
-                if (cndtr >= 1000) buf[i++] = '0' + (cndtr / 1000);
-                if (cndtr >= 100)  buf[i++] = '0' + ((cndtr / 100) % 10);
-                if (cndtr >= 10)   buf[i++] = '0' + ((cndtr / 10) % 10);
-                buf[i++] = '0' + (cndtr % 10);
-                p = "\r\n";
-                while (*p) buf[i++] = *p++;
-                uart_dma_send(hUart, (uint8_t *)buf, i);
-            }
+            ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(500));
         }
 
         avail = uart_dma_rx_available(hUart);
-        /* 收到数据时打印字节数（每 200ms 最多一次，避免刷屏） */
-        if (avail > 0) {
-            static TickType_t xLastRxDiag = 0;
-            TickType_t now = xTaskGetTickCount();
-            if ((now - xLastRxDiag) >= pdMS_TO_TICKS(200)) {
-                xLastRxDiag = now;
-                uint8_t d[18]; uint8_t di = 0;
-                d[di++] = '\r'; d[di++] = '\n';
-                d[di++] = '[';  d[di++] = 'R'; d[di++] = 'X';
-                d[di++] = ':';  d[di++] = ' ';
-                if (avail >= 10) d[di++] = '0' + (avail / 10);
-                d[di++] = '0' + (avail % 10);
-                d[di++] = ' ';  d[di++] = 'b'; d[di++] = 'y';
-                d[di++] = 't';  d[di++] = 'e'; d[di++] = 's';
-                d[di++] = ']';
-                d[di++] = '\r'; d[di++] = '\n';
-                uart_dma_send(hUart, d, di);
-            }
-        }
 
         /* 逐字节吐出 ringbuffer，喂帧解析器（字节间超时由 5ms 定时器独立处理） */
         while (uart_dma_rx_available(hUart)) {
@@ -210,9 +131,9 @@ static void vUartRxTask(void *pvParameters)
             }
         }
 
-        /* 帧解码/校验错误 → PB5 快闪 3 下 */
+        /* 帧解码/校验错误 */
         if (frame_parser_had_error()) {
-            LED_ErrorFlash(3);
+            /* 仅记录, 无 LED */
         }
 
         /* ── 喂狗: 此任务循环走完 = 核心路径正常 ── */
@@ -255,24 +176,14 @@ void vApplicationMallocFailedHook(void)                                    { for
 int main(void)
 {
     NVIC_PriorityGroupConfig(NVIC_PriorityGroup_4);
-    LED_Init();
 
-    /* 启动闪烁: 两灯同时亮灭 2 次，表示上电初始化 */
-    {
-        int i;
-        for (i = 0; i < 2; i++) {
-            GPIO_ResetBits(LED_ERR_PORT, LED_ERR_PIN);
-            GPIO_ResetBits(LED_OK_PORT,  LED_OK_PIN);
-            {
-                volatile uint32_t d = 600000; while (d--) __NOP();
-            }
-            GPIO_SetBits(LED_ERR_PORT, LED_ERR_PIN);
-            GPIO_SetBits(LED_OK_PORT,  LED_OK_PIN);
-            {
-                volatile uint32_t d = 600000; while (d--) __NOP();
-            }
-        }
-    }
+    /* 初始化 SPI Flash + 字库 (必须在 LCD 显示汉字之前) */
+    led_init();
+    norflash_init();
+    fonts_init();
+
+    /* 初始化 TFTLCD 屏 (启动画面需要 Flash 字库) */
+    display_init();
 
     /* 打开 DMA-UART */
     hUart = uart_dma_open(UART_PORT1, 115200,
@@ -286,16 +197,14 @@ int main(void)
     uart_send_text_line("  FaceRecognition STM32 v1.0");
     uart_send_text_line("  DMA+RingBuffer UART / FreeRTOS");
     uart_send_text_line("========================================");
-    uart_send_text_line("[1/4] GPIO OK");
-    uart_send_text_line("[2/4] UART DMA OK (USART1, 115200)");
-    uart_send_text_line("[3/4] FreeRTOS tasks creating...");
+    uart_send_text_line("[1/5] GPIO OK");
+    uart_send_text_line("[2/5] TFTLCD OK");
+    uart_send_text_line("[3/5] UART DMA OK (USART1, 115200)");
+    uart_send_text_line("[4/5] FreeRTOS tasks creating...");
 
     /* RX 任务 */
-    if (xTaskCreate(vUartRxTask, "UartRx", configMINIMAL_STACK_SIZE * 2,
-                    NULL, 3, &xUartRxTaskHandle) != pdPASS)
-        uart_direct_tx("[FATAL] xTaskCreate FAILED!\r\n");
-    else
-        uart_direct_tx("[T1] xTaskCreate OK\r\n");
+    xTaskCreate(vUartRxTask, "UartRx", configMINIMAL_STACK_SIZE * 2,
+                NULL, 3, &xUartRxTaskHandle);
 
     /* 1s 心跳检查定时器 */
     xHeartbeatTimer = xTimerCreate("HBCheck", pdMS_TO_TICKS(1000), pdTRUE, NULL, vHeartbeatTimerCallback);
@@ -308,10 +217,6 @@ int main(void)
     xTimerStart(xFrameTimeoutTimer, 0);
 
     IWDG_Init();
-
-    uart_send_text_line("[4/4] Starting scheduler...");
-    uart_send_text_line("========================================");
-    uart_direct_tx("[MAIN] vTaskStartScheduler()\r\n");
 
     vTaskStartScheduler();
     for (;;);

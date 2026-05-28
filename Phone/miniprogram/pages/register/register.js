@@ -20,7 +20,7 @@
  * @returns {{ baseUrl: string, ip: string, port: number }|null}
  */
 const normalizeUrl = (input, defaultPort) => {
-  if (defaultPort === undefined) defaultPort = 8000;
+  if (defaultPort === undefined) defaultPort = 8081;
   let s = (input || "").trim();
   if (!s) return null;
 
@@ -75,7 +75,7 @@ const getBaseUrl = () => {
     const config = app.globalData.serverConfig;
     if (config && config.baseUrl) return config.baseUrl;
   } catch (e) { /* ignore */ }
-  return "http://192.168.1.5:8081";
+  return "http://192.168.137.1:8081";
 };
 
 /**
@@ -154,8 +154,8 @@ Page({
 
     /* ── 服务器设置 ── */
     showSettings: false,
-    serverIp: "192.168.1.5",
-    serverPort: "8000",
+    serverIp: "192.168.137.1",
+    serverPort: "8081",
     testResult: null,
     testing: false,
     serverDisplay: "",
@@ -355,8 +355,8 @@ Page({
     const saved = getSavedConfig();
     this.setData({
       showSettings: true,
-      serverIp: (saved && saved.ip) || "192.168.1.5",
-      serverPort: String((saved && saved.port) || 8000),
+      serverIp: (saved && saved.ip) || "192.168.137.1",
+      serverPort: String((saved && saved.port) || 8081),
       testResult: null,
       testing: false,
       recentServers: getRecentServers(),
@@ -378,7 +378,7 @@ Page({
   saveServerConfig() {
     const normalized = normalizeUrl(
       `${this.data.serverIp}:${this.data.serverPort}`,
-      parseInt(this.data.serverPort, 10) || 8000
+      parseInt(this.data.serverPort, 10) || 8081
     );
     if (!normalized) {
       wx.showToast({ title: "IP 或端口格式无效", icon: "none" });
@@ -412,7 +412,7 @@ Page({
   testConnection() {
     const normalized = normalizeUrl(
       `${this.data.serverIp}:${this.data.serverPort}`,
-      parseInt(this.data.serverPort, 10) || 8000
+      parseInt(this.data.serverPort, 10) || 8081
     );
     if (!normalized) {
       wx.showToast({ title: "IP 或端口格式无效", icon: "none" });

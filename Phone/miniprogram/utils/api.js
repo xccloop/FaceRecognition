@@ -33,7 +33,7 @@ function _app() {
  */
 function getBaseUrl() {
   var config = _app().globalData.serverConfig;
-  return (config && config.baseUrl) || "http://192.168.1.5:8000";
+  return (config && config.baseUrl) || "http://192.168.1.2:8081";
 }
 
 /**

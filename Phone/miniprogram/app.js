@@ -22,7 +22,7 @@ App({
     // 从本地存储恢复服务器配置
     var cachedServer = wx.getStorageSync("server_config");
     this.globalData.serverConfig = cachedServer || {
-      baseUrl: "http://192.168.1.5:8000",
+      baseUrl: "http://192.168.1.2:8081",
       timeout: 10000
     };
   },

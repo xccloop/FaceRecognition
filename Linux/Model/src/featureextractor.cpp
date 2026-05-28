@@ -5,7 +5,7 @@
 FeatureExtractor::FeatureExtractor(const char* param_path, const char* bin_path)
 {
     net_.opt.use_vulkan_compute = false;
-    net_.opt.num_threads = 4;
+    net_.opt.num_threads = 2;
     net_.load_param(param_path);
     net_.load_model(bin_path);
 }

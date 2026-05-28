@@ -141,7 +141,7 @@ const saveMsg = ref("");
 const saveMsgType = ref<"success" | "error">("success");
 
 const computedStreamUrl = computed(() => {
-  return `http://${form.value.pi_host}:${form.value.pi_stream_port}/stream`;
+  return `http://${form.value.pi_host}:${form.value.pi_stream_port}/video`;
 });
 
 const computedApiUrl = computed(() => {

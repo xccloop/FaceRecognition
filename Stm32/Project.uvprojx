@@ -340,7 +340,7 @@
               <MiscControls></MiscControls>
               <Define>USE_STDPERIPH_DRIVER, STM32F10X_MD</Define>
               <Undefine></Undefine>
-              <IncludePath>.\User;.\Comms;.\Protocol;.\Core;.\System;.\Fwlib\inc;.\FreeRTOS\include;.\FreeRTOS\portable\RVDS\ARM_CM3</IncludePath>
+              <IncludePath>.\User;.\Comms;.\Protocol;.\Core;.\System;.\Fwlib\inc;.\FreeRTOS\include;.\FreeRTOS\portable\RVDS\ARM_CM3;.\BSP\LCD;.\BSP\SPI;.\BSP\NORFLASH;.\Middlewares\TEXT;.\BSP\LED</IncludePath>
             </VariousControls>
           </Cads>
           <Aads>
@@ -628,6 +628,46 @@
               <FileName>heap_4.c</FileName>
               <FileType>1</FileType>
               <FilePath>.\FreeRTOS\portable\MemMang\heap_4.c</FilePath>
+            </File>
+          </Files>
+        </Group>
+        <Group>
+          <GroupName>BSP</GroupName>
+          <Files>
+            <File>
+              <FileName>display.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\BSP\LCD\display.c</FilePath>
+            </File>
+            <File>
+              <FileName>lcd.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\BSP\LCD\lcd.c</FilePath>
+            </File>
+            <File>
+              <FileName>spi.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\BSP\SPI\spi.c</FilePath>
+            </File>
+            <File>
+              <FileName>norflash.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\BSP\NORFLASH\norflash.c</FilePath>
+            </File>
+            <File>
+              <FileName>fonts.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Middlewares\TEXT\fonts.c</FilePath>
+            </File>
+            <File>
+              <FileName>text.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\Middlewares\TEXT\text.c</FilePath>
+            </File>
+            <File>
+              <FileName>led.c</FileName>
+              <FileType>1</FileType>
+              <FilePath>.\BSP\LED\led.c</FilePath>
             </File>
           </Files>
         </Group>

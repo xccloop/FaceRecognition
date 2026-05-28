@@ -338,7 +338,7 @@ class UARTClient:
         return self.send_frame(CMD_HEARTBEAT)
 
     def send_identify(self, name: str) -> bool:
-        return self.send_frame(CMD_IDENTIFY, name.encode("utf-8"))
+        return self.send_frame(CMD_IDENTIFY, name.encode("gbk"))
 
     def send_unknown(self) -> bool:
         return self.send_frame(CMD_UNKNOWN)

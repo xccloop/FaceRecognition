@@ -1,79 +1,69 @@
 #include "cmd_handler.h"
-#include "stm32f10x.h"
+#include "../BSP/LCD/display.h"
+#include "../BSP/LED/led.h"
 #include "FreeRTOS.h"
 #include "task.h"
 
-/* ── 来自 main.c 的调试输出函数 ── */
-extern void uart_send_text_line(const char *msg);
+/* ── 来自 main.c ── */
 extern void uart_send_frame(uint8_t cmd, uint8_t dir,
                             const uint8_t *data, uint16_t data_len);
-
-/* ── 来自 main.c 的心跳状态 ── */
 extern TickType_t xLastFrameTicks;
 extern uint8_t    serial_heartbeat_timeout_sent;
 extern uint8_t    serial_heartbeat_restored;
-
-/* ── LED 引脚: PB5=错误, PE5=成功 ── */
-#define LED_ERR_PORT   GPIOB
-#define LED_ERR_PIN    GPIO_Pin_5
-#define LED_OK_PORT    GPIOE
-#define LED_OK_PIN     GPIO_Pin_5
-
-/* LED 短暂闪烁（任务上下文，可使用 vTaskDelay） */
-static void led_pulse(GPIO_TypeDef *port, uint16_t pin, uint32_t ms)
-{
-    GPIO_ResetBits(port, pin);
-    vTaskDelay(pdMS_TO_TICKS(ms));
-    GPIO_SetBits(port, pin);
-}
+extern uint8_t    serial_has_received_frame;
 
 /* ════════════════════════════════════════════════════════════════
- *  命令处理器
+ *  命令处理器 (串口静默, 只回复 ACK 帧, 不打印文本)
  * ════════════════════════════════════════════════════════════════ */
 
 static void handle_identify(const ParsedFrame_t *f)
 {
-    (void)f;
-    /* 成功: 先灭错误灯，再亮成功灯 */
-    GPIO_SetBits(LED_ERR_PORT, LED_ERR_PIN);
-    uart_send_text_line("[OK] IDENTIFY: face recognized!");
+    char name[32];
+    uint16_t name_len;
+
+    name_len = f->len;
+    if (name_len > sizeof(name) - 1) name_len = sizeof(name) - 1;
+    if (name_len > 0) {
+        uint16_t i;
+        for (i = 0; i < name_len; i++) name[i] = (char)f->data[i];
+        name[name_len] = '\0';
+    } else {
+        name[0] = '?'; name[1] = '\0';
+    }
+
     uart_send_frame(CMD_ACK, DIR_STM32_TO_PI, NULL, 0);
-    led_pulse(LED_OK_PORT, LED_OK_PIN, 2000);
+    display_show_success(name);
+    led_success();
 }
 
 static void handle_unknown(const ParsedFrame_t *f)
 {
     (void)f;
-    /* 未注册人脸: 错误灯闪烁 */
-    GPIO_SetBits(LED_OK_PORT, LED_OK_PIN);
-    uart_send_text_line("[WARN] UNKNOWN face detected!");
-    led_pulse(LED_ERR_PORT, LED_ERR_PIN, 800);
+    display_show_failure(REASON_UNREGISTERED);
+    led_failure();
 }
 
 static void handle_noface(const ParsedFrame_t *f)
 {
     (void)f;
-    uart_send_text_line("[INFO] NOFACE - standby");
+    display_show_standby();
 }
 
 static void handle_multiface(const ParsedFrame_t *f)
 {
     (void)f;
-    /* 多人脸: 错误灯闪烁 */
-    GPIO_SetBits(LED_OK_PORT, LED_OK_PIN);
-    uart_send_text_line("[WARN] MULTIFACE: multiple faces detected!");
-    led_pulse(LED_ERR_PORT, LED_ERR_PIN, 800);
+    display_show_failure(REASON_MULTIFACE);
+    led_failure();
 }
 
 static void handle_heartbeat(const ParsedFrame_t *f)
 {
     (void)f;
     uart_send_frame(CMD_ACK, DIR_STM32_TO_PI, (const uint8_t *)"HB", 2);
-    uart_send_text_line("[OK] HEARTBEAT received");
 }
 
 /* ════════════════════════════════════════════════════════════════
- *  帧分发（入口）
+ *  帧分发
  * ════════════════════════════════════════════════════════════════ */
 
 void dispatch_frame(const ParsedFrame_t *f)
@@ -81,19 +71,17 @@ void dispatch_frame(const ParsedFrame_t *f)
     if (f->dir != DIR_PI_TO_STM32)
         return;
 
+    serial_has_received_frame = 1;
     xLastFrameTicks = xTaskGetTickCount();
 
-    if (serial_heartbeat_timeout_sent && !serial_heartbeat_restored)
-    {
-        uart_send_text_line("[OK] HEARTBEAT RESTORED - Pi back online");
+    if (serial_heartbeat_timeout_sent && !serial_heartbeat_restored) {
         serial_heartbeat_restored     = 1;
         serial_heartbeat_timeout_sent = 0;
-        /* 心跳恢复: 灭掉错误灯 */
-        GPIO_SetBits(LED_ERR_PORT, LED_ERR_PIN);
+        display_show_standby();
+        led_timeout_stop();
     }
 
-    switch (f->cmd)
-    {
+    switch (f->cmd) {
     case CMD_IDENTIFY:   handle_identify(f);   break;
     case CMD_UNKNOWN:    handle_unknown(f);    break;
     case CMD_NOFACE:     handle_noface(f);     break;

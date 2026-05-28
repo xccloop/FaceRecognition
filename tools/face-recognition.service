@@ -1,0 +1,16 @@
+[Unit]
+Description=FaceRecognition Pi Runtime
+After=network.target
+
+[Service]
+Type=simple
+User=qxc
+WorkingDirectory=/home/qxc/Desktop/Raspberry Pi
+ExecStart=/home/qxc/miniforge3/envs/facerec/bin/python3 /home/qxc/Desktop/Raspberry Pi/main.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

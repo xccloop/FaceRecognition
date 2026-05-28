@@ -64,12 +64,13 @@ os.makedirs(PHOTOS_DIR, exist_ok=True)
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
 
 DEFAULT_CONFIG = {
-    "pi_host": "192.168.1.100",
+    "pi_host": "192.168.137.100",
     "pi_stream_port": 8080,
+    "pi_api_port": 5000,
     "pi_ssh_port": 22,
-    "pi_user": "pi",
-    "pi_password": "",
-    "pi_features_dir": "/home/pi/features/",
+    "pi_user": "qxc",
+    "pi_password": "root",
+    "pi_features_dir": "/home/qxc/Desktop/FaceRec/Model/features/",
     "server_port": SERVER_PORT,
     "server_host": SERVER_HOST,
     "heartbeat_timeout": 15,
@@ -472,7 +473,7 @@ def api_camera_status(db: Session = Depends(get_db)):
     pi_status = _get_pi_status(db)
     return {
         "pi_online": pi_status["pi_online"],
-        "stream_url": f"http://{cfg['pi_host']}:{cfg['pi_stream_port']}/stream",
+        "stream_url": f"http://{cfg['pi_host']}:{cfg['pi_stream_port']}/video",
         "camera_fps": pi_status["camera_fps"],
         "pi_uptime": pi_status["pi_uptime"],
     }

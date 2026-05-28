@@ -31,7 +31,7 @@ os.makedirs(PHOTOS_DIR, exist_ok=True)
 
 # 树莓派配置
 PI_HOST = os.getenv("PI_HOST", "192.168.137.100")
-PI_STREAM_URL = os.getenv("PI_STREAM_URL", f"http://{PI_HOST}:8080/stream")
+PI_STREAM_URL = os.getenv("PI_STREAM_URL", f"http://{PI_HOST}:8080/video")
 PI_SSH_PORT = int(os.getenv("PI_SSH_PORT", "22"))
 PI_USER = os.getenv("PI_USER", "pi")
 PI_FEATURES_DIR = os.getenv("PI_FEATURES_DIR", "/home/pi/features/")

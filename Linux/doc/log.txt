@@ -1,0 +1,39 @@
+qxc@raspberrypi:~/Desktop/FaceRec $ ./User/start.sh
+========================================
+  FaceRecognition 启动
+========================================
+[OK] UART: /dev/serial0
+[Clean] 停止旧进程...
+[Start] ncnn 人脸识别引擎...
+[Init] Loading models...
+  det: models/ncnn_models/det_500m_dyn.param
+  rec: models/ncnn_models/w600k_mbf_opt.param
+[Init] Models loaded.
+[Serial] Opened /dev/serial0 @115200bps
+[ WARN:0@1.128] global ./modules/videoio/src/cap_gstreamer.cpp (1405) open OpenCV | GStreamer warning: Cannot query video position: status=0, value=-1, duration=-1
+[Run] Camera: 320x240
+[FeatureDB] Loaded 1 registered face(s).
+[Run] Running. Press Ctrl+C to stop.
+      confirm=3 skip=3 rec_thresh=0.4
+[UART] → UNKNOWN
+[UART] → MULTIFACE
+[Run] #30 fps=10 detect=16ms extract=36ms tracks=2 uart=MULTIFACE
+[UART] ← ACK data=HB
+[Run] #60 fps=10 detect=15ms extract=35ms tracks=2 uart=MULTIFACE
+[Run] #90 fps=10 detect=15ms extract=35ms tracks=3 uart=MULTIFACE
+[UART] ← ACK data=HB
+[Run] #120 fps=11 detect=15ms extract=30ms tracks=2 uart=MULTIFACE
+[Run] #150 fps=11 detect=15ms extract=30ms tracks=2 uart=MULTIFACE
+[UART] → IDENTIFY ▒▒▒β▒
+[UART] ← ACK
+[UART] ← ACK data=HB
+[UART] → MULTIFACE
+[Run] #180 fps=10 detect=15ms extract=33ms tracks=2 uart=MULTIFACE
+[UART] → IDENTIFY ▒▒▒β▒
+[UART] ← ACK
+[Run] #210 fps=10 detect=15ms extract=33ms tracks=1 uart=IDENTIFY:
+[UART] ← ACK data=HB
+[UART] → MULTIFACE
+[Run] #240 fps=13 detect=15ms extract=13ms tracks=2 uart=MULTIFACE
+[UART] → UNKNOWN
+[UART] → NOFACE

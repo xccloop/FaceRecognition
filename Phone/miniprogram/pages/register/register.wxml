@@ -114,7 +114,7 @@
           <text class="settings-label">服务器 IP 地址</text>
           <input
             class="settings-input"
-            placeholder="192.168.1.5"
+            placeholder="192.168.137.1"
             placeholder-class="settings-input-placeholder"
             value="{{serverIp}}"
             bindinput="onIpInput"
