@@ -22,25 +22,24 @@ import numpy as np
 from flask import Flask, request, jsonify
 
 # ── 配置 ──
-SCRIPT_DIR = Path(__file__).resolve().parent
-os.chdir(SCRIPT_DIR)
+SCRIPT_DIR = Path(__file__).resolve().parent          # server/
+MODEL_DIR = SCRIPT_DIR.parent                         # Model/
+os.chdir(MODEL_DIR)
 
-# 模型目录（相对于 Model/ 目录）
-MODEL_DIR = os.environ.get("FACE_MODEL_DIR",
-    str(SCRIPT_DIR / "models" / "onnx_models" / "buffalo_s"))
+# 模型目录
+MODEL_PATH = os.environ.get("FACE_MODEL_DIR",
+    str(MODEL_DIR / "models" / "onnx_models" / "buffalo_s"))
 
-# 特征存储目录
+# 特征存储目录（与 C++ facerec 共用 features/）
 FEATURES_DIR = os.environ.get("FACE_FEAT_DIR",
-    str(SCRIPT_DIR / "features"))
+    str(MODEL_DIR / "features"))
 os.makedirs(FEATURES_DIR, exist_ok=True)
 
-# 添加 Raspberry Pi/src 到 path 以使用 RecognitionEngine
-PI_SRC = str(SCRIPT_DIR.parent / "Raspberry Pi" / "src")
-if PI_SRC not in sys.path:
-    sys.path.insert(0, PI_SRC)
+# recognition.py 在同一目录，直接 import
+sys.path.insert(0, str(SCRIPT_DIR))
 
 print(f"[pi_server] 脚本目录: {SCRIPT_DIR}")
-print(f"[pi_server] 模型目录: {MODEL_DIR}")
+print(f"[pi_server] 模型目录: {MODEL_PATH}")
 print(f"[pi_server] 特征目录: {FEATURES_DIR}")
 
 # ── 加载识别引擎 ──
@@ -51,7 +50,7 @@ def _get_engine():
     if _engine is None:
         from recognition import RecognitionEngine
         _engine = RecognitionEngine(
-            model_dir=MODEL_DIR,
+            model_dir=MODEL_PATH,
             det_model="det_500m.onnx",
             rec_model="w600k_mbf.onnx",
         )

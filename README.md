@@ -92,9 +92,9 @@
 - `uart_protocol.cpp` — COBS+CRC8 帧编解码 + 逐字节状态机 (与 STM32 协议一致)
 - `main.cpp` — 生产模式 `facerec run`: 采集→检测→跟踪→识别→UART+MJPEG 全管线
 
-**Python 辅助 (`Linux/Raspberry Pi/src/`)：**
+**Python 辅助 (`Linux/Model/server/`)：**
 - `pi_server.py` — Flask 注册 API (:5000), 接收 Windows 端照片, ONNX 提取特征存 .bin
-- `uart.py` — COBS+CRC8 帧协议 Python 实现 (测试/模拟用)
+- `recognition.py` — ONNX Runtime 推理引擎 (pi_server 依赖)
 - `uart_simulator.py` (tools/) — 交互式串口测试工具, 手动发帧验证 STM32 响应
 
 ### STM32F103 — 门锁终端
@@ -199,7 +199,7 @@ sudo systemctl start face-recognition
 journalctl -u face-recognition -f    # 实时日志
 
 # 4. 启动注册 API（接收 Windows 端同步）
-cd ~/Desktop/FaceRec/Model
+cd ~/Desktop/FaceRec/Model/server
 nohup python3 pi_server.py --port 5000 > /tmp/pi_server.log 2>&1 &
 ```
 
@@ -250,15 +250,14 @@ FaceRecognition/
 │   ├── Model/                      # C++ ncnn 推理核心 (部署: ~/Desktop/FaceRec/Model)
 │   │   ├── src/                    # facedetector, facealigner, featureextractor, uart_protocol, main
 │   │   ├── inc/                    # C++ 头文件
+│   │   ├── server/                 # Python 注册 API
+│   │   │   ├── pi_server.py        # Flask 注册 API (:5000)
+│   │   │   └── recognition.py      # ONNX Runtime 推理引擎
 │   │   ├── models/ncnn_models/     # SCRFD + MobileFaceNet (ncnn .param/.bin)
-│   │   ├── pi_server.py            # Flask 注册 API (:5000)
-│   │   ├── mjpeg_stream.py         # MJPEG 推流 (已内建到 C++, 备用)
-│   │   └── features/               # 人脸特征 .bin 存储
-│   ├── Raspberry Pi/src/           # Python 辅助 (ONNX 备选 + 测试)
-│   ├── Tools/                      # 启动脚本 + 测试工具
-│   │   ├── start.sh                # User/start.sh — 一键启动
-│   │   ├── uart_simulator.py       # 串口模拟器 (交互式测试)
-│   │   └── mjpeg_start.sh          # MJPEG 独立启动 (备用)
+│   │   ├── features/               # 人脸特征 .bin 存储
+│   │   └── mjpeg_stream.py         # MJPEG 推流 (备用, 已内建到 C++)
+│   ├── User/                       # 启动脚本
+│   │   └── start.sh                # 一键启动 (C++ 推理 + UART + MJPEG)
 │   └── doc/                        # 部署文档 + 故障排查
 ├── Stm32/                          # STM32 固件
 │   ├── User/main.c                 # FreeRTOS 入口
