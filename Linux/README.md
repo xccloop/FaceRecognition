@@ -26,7 +26,8 @@
 5. 特征库每 5s 自动热加载 (运行时增删人员)
 
 **Python 辅助**：
-- `pi_server.py` (:5000) — 接收 Windows 端注册照片，ONNX 提取特征 → `features/*.bin`
+- `server/pi_server.py` (:5000) — 接收 Windows 端注册照片，ONNX 提取特征 → `features/*.bin`
+- `server/recognition.py` — ONNX Runtime 推理引擎（pi_server 依赖）
 - `uart_simulator.py` — 交互式串口测试工具
 
 ## 目录结构
@@ -41,17 +42,14 @@
 │   │   ├── featureextractor.cpp  # MobileFaceNet 特征提取
 │   │   └── uart_protocol.cpp     # COBS+CRC8 帧编解码
 │   ├── inc/                      # 头文件
+│   ├── server/                   # Python 注册 API
+│   │   ├── pi_server.py          # Flask 注册 API (:5000)
+│   │   └── recognition.py        # ONNX Runtime 推理引擎
 │   ├── models/ncnn_models/       # ncnn .param/.bin 模型
 │   ├── features/                 # 人脸特征 .bin 存储
 │   ├── build/facerec             # 编译产物 (ARM aarch64 ELF)
-│   ├── pi_server.py              # Flask 注册 API (:5000)
 │   ├── mjpeg_stream.py           # MJPEG 推流 (备用, 已内建到 C++)
 │   └── CMakeLists.txt            # CMake 构建配置
-├── Raspberry Pi/                 # Python 辅助 (ONNX 备选)
-│   └── src/
-│       ├── recognition.py        # ONNX Runtime 推理引擎
-│       ├── uart.py               # COBS/CRC8 Python 实现
-│       └── mjpeg.py              # Flask MJPEG 服务器 (备用)
 └── User/
     └── start.sh                  # 一键启动脚本
 ```
